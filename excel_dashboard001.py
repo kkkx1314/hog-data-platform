@@ -22,11 +22,67 @@ except Exception:
     LunarDate = None
 
 
-DEFAULT_YONGYI_PATH = r"D:\CC\Desktop\平台数据\2026年3月20日涌益咨询日度数据.xlsx"
-DEFAULT_WEEKLY_PATH = r"D:\CC\Desktop\平台数据\2026.3.13-2026.3.19涌益咨询 周度数据.xlsx"
-DEFAULT_FUTURES_PATH = r"D:\CC\Desktop\平台数据\7.期货市场（日）.xlsx"
-DEFAULT_TRANSPORT_PATH = r"D:\CC\Desktop\平台数据\20260309-20260318猪只调运智能分析结果（二次去重版）.xlsx"
-DEFAULT_FRESH_FROZEN_PATH = r"D:\CC\Desktop\平台数据\5.鲜品冻品价格数据库.xlsx"
+# ── 平台数据目录 ──
+PLATFORM_DATA_DIR = Path(r"D:\CC\Desktop\平台数据")
+
+# ── 自动识别最新数据文件 ──
+def _find_latest_file(pattern: str, dir_path: Path = None) -> Path | None:
+    """在数据目录中按文件名模式匹配最新文件"""
+    search_dir = dir_path or PLATFORM_DATA_DIR
+    if not search_dir.exists():
+        return None
+    candidates = []
+    for f in search_dir.glob("*.xlsx"):
+        if re.search(pattern, f.name, re.IGNORECASE):
+            candidates.append((f.stat().st_mtime, f))
+    if not candidates:
+        for f in search_dir.glob("*.xls"):
+            if re.search(pattern, f.name, re.IGNORECASE):
+                candidates.append((f.stat().st_mtime, f))
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+    return None
+
+
+def _find_yongyi_daily() -> str:
+    """自动识别涌益咨询日度数据"""
+    f = _find_latest_file(r"涌益咨询日度数据")
+    if f: return str(f)
+    # 兜底
+    fallback = PLATFORM_DATA_DIR / "2026年3月20日涌益咨询日度数据.xlsx"
+    return str(fallback) if fallback.exists() else ""
+
+
+def _find_yongyi_weekly() -> str:
+    """自动识别涌益咨询周度数据"""
+    f = _find_latest_file(r"涌益咨询.*周度数据")
+    if f: return str(f)
+    fallback = PLATFORM_DATA_DIR / "2026.3.13-2026.3.19涌益咨询 周度数据.xlsx"
+    return str(fallback) if fallback.exists() else ""
+
+
+def _find_transport() -> str:
+    """自动识别猪只调运数据"""
+    f = _find_latest_file(r"猪只调运")
+    if f: return str(f)
+    fallback = PLATFORM_DATA_DIR / "20260309-20260318猪只调运智能分析结果（二次去重版）.xlsx"
+    return str(fallback) if fallback.exists() else ""
+
+
+def _find_fresh_frozen() -> str:
+    """自动识别鲜品冻品/神农肉业数据"""
+    f = _find_latest_file(r"鲜品|神农肉业")
+    if f: return str(f)
+    fallback = PLATFORM_DATA_DIR / "5.鲜品冻品价格数据库.xlsx"
+    return str(fallback) if fallback.exists() else ""
+
+
+DEFAULT_YONGYI_PATH = _find_yongyi_daily()
+DEFAULT_WEEKLY_PATH = _find_yongyi_weekly()
+DEFAULT_TRANSPORT_PATH = _find_transport()
+DEFAULT_FRESH_FROZEN_PATH = _find_fresh_frozen()
+DEFAULT_FUTURES_PATH = ""  # 已移除期货分析模块，保留变量避免引用报错
 
 # 周度数据：跳过这些 sheet（说明/目录/静态/辅助/停更）
 WEEKLY_SKIP_SHEETS: set[str] = {
@@ -7210,7 +7266,7 @@ with st.sidebar:
     )
     module = st.radio(
         "当前模块",
-        ["涌益日度数据", "涌益周度数据", "期货分析", "调运分析", "鲜冻品数据库"],
+        ["涌益日度数据", "涌益周度数据", "调运分析", "鲜品数据库"],
         key="module",
         label_visibility="collapsed",
     )
@@ -7221,8 +7277,6 @@ if module == "涌益日度数据":
     render_yongyi_daily_module()
 elif module == "涌益周度数据":
     render_yongyi_weekly_module()
-elif module == "期货分析":
-    render_futures_module()
 elif module == "调运分析":
     render_transport_module()
 else:
