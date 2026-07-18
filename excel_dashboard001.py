@@ -2501,35 +2501,41 @@ def build_yongyi_global_summary(numeric_df: pd.DataFrame, target_date: pd.Timest
     if not fat_spread_sheet_df.empty:
         _, spread_view_df = build_scattered_fat_price_views(fat_spread_sheet_df)
         if not spread_view_df.empty:
-            snap = get_snapshot_date(spread_view_df, target_date)
+            # 取全国均价：筛选 province=="全部" 的行，若无则取全部省份均值
+            if "province" in spread_view_df.columns:
+                national = spread_view_df[spread_view_df["province"].apply(
+                    lambda p: is_national_scope(str(p)) if pd.notna(p) else False
+                )]
+                scoped = national if not national.empty else spread_view_df
+            else:
+                scoped = spread_view_df
+            snap = get_snapshot_date(scoped, target_date)
             if snap is not None:
-                snap_spread = spread_view_df[spread_view_df["date"] == snap]
-                # 150kg较标猪价差
-                s150 = snap_spread[snap_spread["metric"].str.contains("150公斤", na=False)]
+                snap_data = scoped[scoped["date"] == snap]
+                prev_date = scoped[scoped["date"] < snap]["date"].max()
+                prev_data = scoped[scoped["date"] == prev_date] if pd.notna(prev_date) else pd.DataFrame()
+                # 150kg较标猪价差：筛选含"较标猪"的原始价差
+                s150 = snap_data[snap_data["metric"].astype(str).str.contains("150.*较标猪|较标猪.*150", na=False, regex=True)]
                 if not s150.empty:
                     val_150 = s150["value"].mean()
-                    # 前一日
-                    prev_snap = get_snapshot_date(
-                        spread_view_df[spread_view_df["date"] < snap], snap - pd.Timedelta(days=1)
-                    ) if len(spread_view_df[spread_view_df["date"] < snap]) > 0 else None
                     prev_150 = np.nan
-                    if prev_snap is not None:
-                        prev_spread = spread_view_df[spread_view_df["date"] == prev_snap]
-                        p150 = prev_spread[prev_spread["metric"].str.contains("150公斤", na=False)]
+                    if not prev_data.empty:
+                        p150 = prev_data[prev_data["metric"].astype(str).str.contains("150.*较标猪|较标猪.*150", na=False, regex=True)]
                         if not p150.empty:
                             prev_150 = p150["value"].mean()
-                    fat_spread_150 = {"metric": "150kg猪较标猪价差", "value": float(val_150), "prev_value": prev_150, "date": snap}
-                # 175kg较标猪价差
-                s175 = snap_spread[snap_spread["metric"].str.contains("175公斤", na=False)]
+                    fat_spread_150 = {"metric": "150kg猪较标猪价差", "value": float(val_150),
+                                      "prev_value": prev_150, "date": snap}
+                # 175kg较标猪价差（相同方式）
+                s175 = snap_data[snap_data["metric"].astype(str).str.contains("175.*较标猪|较标猪.*175", na=False, regex=True)]
                 if not s175.empty:
                     val_175 = s175["value"].mean()
                     prev_175 = np.nan
-                    if prev_snap is not None:
-                        prev_spread = spread_view_df[spread_view_df["date"] == prev_snap]
-                        p175 = prev_spread[prev_spread["metric"].str.contains("175公斤", na=False)]
+                    if not prev_data.empty:
+                        p175 = prev_data[prev_data["metric"].astype(str).str.contains("175.*较标猪|较标猪.*175", na=False, regex=True)]
                         if not p175.empty:
                             prev_175 = p175["value"].mean()
-                    fat_spread_175 = {"metric": "175kg猪较标猪价差", "value": float(val_175), "prev_value": prev_175, "date": snap}
+                    fat_spread_175 = {"metric": "175kg猪较标猪价差", "value": float(val_175),
+                                      "prev_value": prev_175, "date": snap}
 
     lines: list[str] = []
     cards: list[dict[str, str]] = []
@@ -7833,11 +7839,19 @@ def render_fresh_frozen_module() -> None:
         frozen_weekly = frozen_weekly.groupby("date", as_index=False)["value"].mean()
         frozen_weekly = frozen_weekly.rename(columns={"value": "frozen_value"})
 
-        # 冻品周度价格展开到每日：每个周日期覆盖后续6天
+        # 冻品周度价格展开到每日：根据相邻周期间隔确定覆盖天数
+        frozen_weekly = frozen_weekly.sort_values("date").reset_index(drop=True)
         frozen_daily_rows = []
-        for _, row in frozen_weekly.iterrows():
+        for i, (_, row) in enumerate(frozen_weekly.iterrows()):
             week_start = row["date"]
-            for d in range(7):  # 周度覆盖7天
+            # 下一条记录的日期 - 1 天 = 本周覆盖的结束日期
+            if i + 1 < len(frozen_weekly):
+                next_start = frozen_weekly.iloc[i + 1]["date"]
+                week_end = next_start - pd.Timedelta(days=1)
+            else:
+                week_end = week_start + pd.Timedelta(days=6)  # 最后一周默认7天
+            days_in_week = (week_end - week_start).days + 1
+            for d in range(days_in_week):
                 frozen_daily_rows.append({
                     "date": week_start + pd.Timedelta(days=d),
                     "frozen_value": row["frozen_value"]
