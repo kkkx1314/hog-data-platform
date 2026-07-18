@@ -3094,10 +3094,101 @@ def build_transport_dataset_from_path(path_str: str) -> pd.DataFrame:
 # -----------------------------
 # 鲜冻品数据解析
 # -----------------------------
-def add_price_record(records: list[dict], sheet: str, category: str, product: str, date: pd.Timestamp | None, raw_value: Any) -> None:
-    ts = parse_date(date)
+
+# 预设年份（鲜品日期为 M.DD 浮点格式，无年份）
+_CURRENT_YEAR = 2025
+
+
+def _parse_month_day_float(value: Any) -> pd.Timestamp | None:
+    """解析"月.日"浮点日期（如 5.16 → 2025-05-16），用于鲜品价格日报。"""
+    if value is None:
+        return None
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        if pd.isna(value):
+            return None
+        num = float(value)
+        month = int(num)
+        day = int(round((num - month) * 100))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            try:
+                return pd.Timestamp(year=_CURRENT_YEAR, month=month, day=day)
+            except Exception:
+                return None
+    return None
+
+
+def _parse_week_range_date(value: Any) -> pd.Timestamp | None:
+    """解析周区间日期字符串（如"5月18日-5月24日"→起始日），用于冻品价格日报。"""
+    text = text_of(value)
+    if not text:
+        return None
+    text_clean = text.replace("\n", "").replace(" ", "")
+    # 尝试中文周区间格式: "5月18日-5月24日"
+    m = re.match(r"(\d{1,2})月(\d{1,2})日?[-~～](\d{1,2})月(\d{1,2})日?", text_clean)
+    if m:
+        try:
+            return pd.Timestamp(year=_CURRENT_YEAR, month=int(m.group(1)), day=int(m.group(2)))
+        except Exception:
+            pass
+    # 尝试小数点周区间格式: "5.18-5.24"
+    m = re.match(r"(\d{1,2})\.(\d{1,2})[-~～](\d{1,2})\.(\d{1,2})", text_clean)
+    if m:
+        try:
+            return pd.Timestamp(year=_CURRENT_YEAR, month=int(m.group(1)), day=int(m.group(2)))
+        except Exception:
+            pass
+    # 尝试单个中文日期: "5月18日"
+    m = re.match(r"(\d{1,2})月(\d{1,2})日?", text_clean)
+    if m:
+        try:
+            return pd.Timestamp(year=_CURRENT_YEAR, month=int(m.group(1)), day=int(m.group(2)))
+        except Exception:
+            pass
+    # 尝试浮点格式兜底
+    return _parse_month_day_float(text)
+
+
+def _is_price_sheet(sheet_name: str, rows: list[list[Any]]) -> bool:
+    """判断一个 sheet 是否为价格日报（而非名称对照等非数据表）。
+    价格日报特征：第 0 行含产品名列，第 1 行含供应商名，第 2 行起有数值。"""
+    if len(rows) < 3:
+        return False
+    # 名称对照表：sheet 名含"名称"或"对照"，或第 0 行数据含"名称"
+    if any(kw in sheet_name for kw in ("名称", "对照")):
+        return False
+    if any("名称" in str(c) or "对照" in str(c) for c in rows[0] if c):
+        return False
+    # 检查第 2 行（第一个数据行）col[0] 是否为日期（浮点或周区间）
+    first_val = rows[2][0] if len(rows) > 2 and rows[2] else None
+    if first_val is not None:
+        if isinstance(first_val, (int, float)):
+            month = int(float(first_val))
+            if 1 <= month <= 12 and 0 < float(first_val) - month < 1:
+                return True
+        text = text_of(first_val)
+        if text and re.search(r"\d{1,2}月\d{1,2}日", text):
+            return True
+    # 检查第 1 行是否包含供应商关键字（第 1 行 = 供应商行，对价格日报有效）
+    supplier_keywords = ["神农", "双汇", "牧原", "千喜鹤", "众品"]
+    row1_text = " ".join(str(c) for c in rows[1] if c)
+    if any(kw in row1_text for kw in supplier_keywords):
+        return True
+    # 检查是否有明显数值列（第 2 行起有浮点价格）
+    if len(rows) > 2:
+        numeric_count = 0
+        for col in range(1, min(len(rows[2]), 10)):
+            v = rows[2][col] if col < len(rows[2]) else None
+            if isinstance(v, (int, float)) and not pd.isna(v):
+                numeric_count += 1
+        if numeric_count >= 2:
+            return True
+    return False
+
+
+def add_price_record(records: list[dict], sheet: str, category: str, product: str, supplier: str, date: pd.Timestamp | None, raw_value: Any) -> None:
+    """添加一条价格记录。product = 产品名（如"去皮前段"），supplier = 供应商名（如"神农鲜品"）。"""
     low, high, mid, raw_text = parse_price_band(raw_value)
-    if ts is None or mid is None or not product:
+    if date is None or mid is None or not product:
         return
     records.append(
         {
@@ -3105,8 +3196,9 @@ def add_price_record(records: list[dict], sheet: str, category: str, product: st
             "dataset_type": "鲜品" if "鲜品" in sheet else "冻品",
             "category": category or "未分组",
             "product": product,
-            "series_name": product,
-            "date": ts,
+            "supplier": supplier or "未知",
+            "series_name": f"{product} · {supplier}" if supplier else product,
+            "date": date,
             "value": mid,
             "mid_price": mid,
             "low_price": low,
@@ -3114,35 +3206,84 @@ def add_price_record(records: list[dict], sheet: str, category: str, product: st
             "price_range_text": raw_text,
             "province": "全部",
             "city": "",
-            "display_name": product,
+            "display_name": f"{product} · {supplier}" if supplier else product,
         }
     )
 
 
 @st.cache_data(show_spinner=False)
 def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
+    """从神农肉业鲜品/冻品 Excel 解析价格数据。
+    支持两种日期格式：鲜品浮点 M.DD（如 5.16）、冻品周区间字符串（如"5月18日-5月24日"）。
+    数据结构：Row 0 = 产品名列（合并单元格，用 filled_right 填充），Row 1 = 供应商名，Row 2+ = 日期+价格。
+    """
     sheets = read_workbook_rows_from_path(path_str)
     records: list[dict] = []
+    sheets_processed = 0
+    sheets_skipped = 0
+
     for sheet, rows in sheets.items():
         if len(rows) < 3:
+            sheets_skipped += 1
             continue
-        category_row = rows[0]
-        product_row = rows[1]
-        categories = filled_right([text_of(x) for x in category_row])
+        if not _is_price_sheet(sheet, rows):
+            sheets_skipped += 1
+            continue
+
+        # Row 0: 产品名（合并单元格含 None，需 filled_right 填充）
+        # Row 1: 供应商名（交替排列，如 神农鲜品/双汇鲜品/神农鲜品/双汇鲜品...）
+        product_row_raw = rows[0]
+        supplier_row = rows[1]
+        products_filled = filled_right([text_of(x) for x in product_row_raw])
+
+        # 判断是否为冻品（冻品有更多供应商，鲜品只有 2 个）
+        is_frozen = "冻品" in sheet
+
+        n_cols = min(len(supplier_row), len(products_filled))
+        if n_cols <= 1:
+            continue
+
         for row in rows[2:]:
             if not row:
                 continue
-            date = parse_date(row[0] if len(row) > 0 else None)
+
+            # 尝试解析日期：优先浮点 M.DD（鲜品），其次周区间字符串（冻品）
+            raw_date = row[0] if len(row) > 0 else None
+            date = _parse_month_day_float(raw_date)
+            if date is None:
+                date = _parse_week_range_date(raw_date)
+            if date is None:
+                # 兜底：尝试标准 parse_date
+                date = parse_date(raw_date)
             if date is None:
                 continue
-            for col in range(1, len(product_row)):
-                product = text_of(product_row[col] if col < len(product_row) else None)
-                category = text_of(categories[col] if col < len(categories) else None)
+
+            for col in range(1, n_cols):
+                product_name = text_of(products_filled[col] if col < len(products_filled) else None)
+                supplier_name = text_of(supplier_row[col] if col < len(supplier_row) else None)
                 value = row[col] if col < len(row) else None
-                add_price_record(records, sheet, category, product, date, value)
+
+                # 跳过明显非数值的值（如"暂无"、"停宰"等文本标记）
+                if value is not None and isinstance(value, str):
+                    cleaned = value.strip()
+                    if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—"):
+                        continue
+
+                category = ""  # category 即为产品名
+                add_price_record(records, sheet, product_name, product_name, supplier_name, date, value)
+
+        sheets_processed += 1
+
     if not records:
-        cols = ["sheet", "dataset_type", "category", "product", "series_name", "date", "value", "mid_price", "low_price", "high_price", "price_range_text", "province", "city", "display_name"]
-        return pd.DataFrame(columns=cols)
+        cols = ["sheet", "dataset_type", "category", "product", "supplier", "series_name",
+                "date", "value", "mid_price", "low_price", "high_price",
+                "price_range_text", "province", "city", "display_name"]
+        df = pd.DataFrame(columns=cols)
+        # 附加诊断信息
+        df.attrs["sheets_processed"] = sheets_processed
+        df.attrs["sheets_skipped"] = sheets_skipped
+        df.attrs["total_sheets"] = sheets_processed + sheets_skipped
+        return df
     df = pd.DataFrame(records)
     df = enrich_date_features(df)
     return df.sort_values(["dataset_type", "category", "product", "date"]).reset_index(drop=True)
@@ -7167,30 +7308,138 @@ def render_transport_module() -> None:
 # 模块页面：鲜冻品数据库
 # -----------------------------
 def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: str) -> None:
-    category_options = sorted(price_df["category"].dropna().unique().tolist())
+    # ── 产品 & 供应商选择 ──
     product_options = sorted(price_df["product"].dropna().unique().tolist())
-    col1, col2 = st.columns([1, 1.5])
-    with col1:
-        selected_category = st.selectbox(f"{page_title}分类", ["全部"] + category_options, key=f"{page_key}_category")
-    with col2:
-        if selected_category == "全部":
-            current_products = product_options
-        else:
-            current_products = sorted(price_df[price_df["category"] == selected_category]["product"].unique().tolist())
-        selected_product = st.selectbox(f"{page_title}产品", current_products, key=f"{page_key}_product")
+    supplier_options = sorted(price_df["supplier"].dropna().unique().tolist()) if "supplier" in price_df.columns else []
+
+    col_a, col_b, col_c = st.columns([1, 1, 1])
+    with col_a:
+        selected_product = st.selectbox(f"{page_title}产品", product_options, key=f"{page_key}_product")
+    # 该产品可用的供应商
+    product_suppliers = sorted(price_df[price_df["product"] == selected_product]["supplier"].dropna().unique().tolist()) if supplier_options else []
+    with col_b:
+        supplier_1 = st.selectbox(f"{page_title}系列 1", product_suppliers, key=f"{page_key}_sup1",
+                                  index=0 if product_suppliers else 0)
+    with col_c:
+        default_s2 = product_suppliers[1] if len(product_suppliers) > 1 else (product_suppliers[0] if product_suppliers else "")
+        try:
+            idx2 = product_suppliers.index(default_s2)
+        except (ValueError, IndexError):
+            idx2 = 0
+        supplier_2 = st.selectbox(f"{page_title}系列 2", product_suppliers, key=f"{page_key}_sup2", index=min(idx2, len(product_suppliers) - 1))
+
+    # ── 价差开关 ──
+    show_spread = st.checkbox("📏 显示价差（系列1 − 系列2，虚线·右轴）", value=False, key=f"{page_key}_show_spread")
+    spread_type = "绝对值"
+    if show_spread:
+        spread_col1, spread_col2 = st.columns([1, 3])
+        with spread_col1:
+            spread_type = st.radio("价差类型", ["绝对值", "百分比"], horizontal=True, key=f"{page_key}_spread_type")
+
     target_date = st.date_input(f"{page_title}分析日期", value=price_df["date"].max().date(), min_value=price_df["date"].min().date(), max_value=price_df["date"].max().date(), key=f"{page_key}_date")
     frequency, show_seasonal, use_lunar = _render_standard_controls(page_key)
     _, _, filtered_price_df = build_cn_date_range_selector(price_df, f"{page_key}_chart", f"📅 {page_title}图表日期范围")
 
-    current = filtered_price_df[filtered_price_df["product"] == selected_product].copy()
-    if current.empty:
-        st.warning("所选图表日期范围内没有该产品数据。")
+    # ── 提取两个系列 ──
+    mask1 = (filtered_price_df["product"] == selected_product) & (filtered_price_df["supplier"] == supplier_1)
+    s1 = filtered_price_df[mask1].copy()
+    mask2 = (filtered_price_df["product"] == selected_product) & (filtered_price_df["supplier"] == supplier_2)
+    s2 = filtered_price_df[mask2].copy()
+
+    if s1.empty and s2.empty:
+        st.warning(f"所选产品「{selected_product}」在日期范围内无数据。请检查产品/供应商选择或日期范围。")
+        # 诊断信息
+        with st.expander("🔍 数据诊断", expanded=True):
+            st.markdown(f"- 产品列表: {product_options}")
+            st.markdown(f"- 当前产品可用供应商: {product_suppliers}")
+            st.markdown(f"- 日期范围: {filtered_price_df['date'].min()} ~ {filtered_price_df['date'].max()}")
+            st.markdown(f"- 筛选后数据行数: {len(filtered_price_df)}")
         return
+
+    # ── 构建合并数据用于价差计算 ──
+    s1_agg = s1.groupby("date", as_index=False)["value"].mean().rename(columns={"value": "v1"})
+    s2_agg = s2.groupby("date", as_index=False)["value"].mean().rename(columns={"value": "v2"})
+    merged = s1_agg.merge(s2_agg, on="date", how="outer").sort_values("date")
+
+    label1 = f"{selected_product} · {supplier_1}"
+    label2 = f"{selected_product} · {supplier_2}"
+
+    if show_spread:
+        if spread_type == "百分比":
+            merged["spread"] = np.where(
+                merged["v2"].notna() & (merged["v2"] != 0),
+                (merged["v1"] - merged["v2"]) / merged["v2"] * 100,
+                np.nan,
+            )
+            spread_label = f"价差 %（{supplier_1} − {supplier_2}）"
+            spread_axis_title = "价差 (%)"
+        else:
+            merged["spread"] = merged["v1"] - merged["v2"]
+            spread_label = f"价差（{supplier_1} − {supplier_2}）"
+            spread_axis_title = "价差 (元)"
+
+    # ── 可视化 ──
     if show_seasonal:
-        _render_seasonal_section(current, use_lunar, f"{page_key}_{selected_product}", frequency)
+        # 季节性图：使用合并后的主数据
+        combined = pd.concat([
+            s1.assign(series_name=label1),
+            s2.assign(series_name=label2),
+        ], ignore_index=True)
+        _render_seasonal_section(combined, use_lunar, f"{page_key}_{selected_product}", frequency)
+    elif show_spread and merged["spread"].notna().any():
+        # 双轴图：左轴价格（实线），右轴价差（虚线）
+        agg = aggregate_series_frequency(
+            pd.concat([s1.assign(series_name=label1), s2.assign(series_name=label2)], ignore_index=True),
+            frequency, use_lunar=use_lunar,
+        )
+        order = agg.sort_values("period")["period_label"].drop_duplicates().tolist()
+        fig = go.Figure()
+        colors = ["#2563EB", "#DC2626"]
+        for i, sname in enumerate(sorted(agg["series_name"].dropna().unique())):
+            sub = agg[agg["series_name"] == sname]
+            fig.add_trace(go.Scatter(
+                x=sub["period_label"], y=sub["value"],
+                mode="lines+markers", name=sname,
+                yaxis="y",
+                line=dict(color=colors[i % 2], width=2),
+                marker=dict(size=5),
+                hovertemplate=f"%{{x}}<br>{sname}：%{{y:.2f}}<extra></extra>",
+            ))
+        # 价差虚线（右轴）
+        spread_agg = aggregate_series_frequency(
+            merged[["date", "spread"]].rename(columns={"spread": "value"}).assign(series_name=spread_label),
+            frequency, use_lunar=use_lunar,
+        )
+        spread_sub = spread_agg[spread_agg["series_name"] == spread_label]
+        fig.add_trace(go.Scatter(
+            x=spread_sub["period_label"], y=spread_sub["value"],
+            mode="lines", name=spread_label,
+            yaxis="y2",
+            line=dict(color="#9333EA", width=2.5, dash="dash"),
+            hovertemplate=f"%{{x}}<br>{spread_label}：%{{y:.2f}}<extra></extra>",
+        ))
+        fig.update_layout(
+            title=f"{selected_product} 价格对比 · 价差分析（{frequency}）",
+            xaxis=dict(title="日期", type="category", categoryorder="array", categoryarray=order),
+            yaxis=dict(title="价格 (元)"),
+            yaxis2=dict(title=spread_axis_title, overlaying="y", side="right", showgrid=False),
+            template="plotly_white", hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5),
+        )
+        render_plotly(fig, page_key, "spread_chart", selected_product, supplier_1, supplier_2, frequency)
     else:
-        render_plotly(build_product_price_chart(current, frequency, f"{selected_product} 价格走势（{frequency}）"), page_key, "price_chart", selected_product, frequency)
-    render_signal_messages(f"{page_title}异常提示", build_price_alert_messages(current, pd.Timestamp(target_date), selected_product), "当前未发现明显异常。")
+        # 单轴图
+        combined = pd.concat([
+            s1.assign(series_name=label1),
+            s2.assign(series_name=label2),
+        ], ignore_index=True)
+        render_plotly(build_product_price_chart(combined, frequency, f"{selected_product} 价格走势（{frequency}）"), page_key, "price_chart", selected_product, frequency)
+
+    # ── 异常提示 ──
+    s1_for_alert = s1.copy()
+    s1_for_alert["series_name"] = label1
+    if not s1_for_alert.empty:
+        render_signal_messages(f"{page_title}异常提示 · {label1}", build_price_alert_messages(s1_for_alert, pd.Timestamp(target_date), label1), "当前未发现明显异常。")
 
 
 def render_fresh_frozen_module() -> None:
@@ -7204,10 +7453,52 @@ def render_fresh_frozen_module() -> None:
         price_df = build_fresh_frozen_dataset_from_path(fresh_path)
     except Exception as exc:
         st.error(f"鲜冻品数据载入失败：{exc}")
+        st.info(
+            "**调试建议**：\n"
+            "1. 确认 Excel 文件存在于 `D:\\CC\\Desktop\\平台数据\\` 目录\n"
+            "2. 文件名应为 `神农肉业-鲜品价格.xlsx` 或 `神农肉业-冻品价格.xlsx`\n"
+            "3. Excel 应包含\"价格日报\"类 sheet，数据结构为：\n"
+            "   - Row 1: 产品名（合并单元格跨供应商列）\n"
+            "   - Row 2: 供应商名（神农鲜品/双汇鲜品 交替）\n"
+            "   - Row 3+: 日期（如 5.16）+ 价格数据\n"
+            "4. 鲜品日期为 M.DD 浮点格式（如 5.16 = 5月16日）\n"
+            "5. 冻品日期为周区间字符串（如 \"5月18日-5月24日\"）"
+        )
         return
     if price_df.empty:
-        st.warning("鲜冻品数据为空。")
+        st.warning("⚠️ 鲜冻品数据为空，未能解析出任何价格记录。")
+        # 诊断信息
+        info = price_df.attrs
+        sheets_processed = info.get("sheets_processed", 0)
+        sheets_skipped = info.get("sheets_skipped", 0)
+        total = info.get("total_sheets", 0)
+        st.info(
+            f"**数据加载诊断**：共扫描 {total} 个 sheet，"
+            f"成功解析 {sheets_processed} 个，跳过 {sheets_skipped} 个。\n\n"
+            "**可能原因**：\n"
+            "1. Sheet 不包含\"价格日报\"格式的数据（名称对照表会被自动跳过）\n"
+            "2. 日期格式无法识别（鲜品需 M.DD 浮点，冻品需\"X月X日-X月X日\"字符串）\n"
+            "3. 价格列全为文本标记（如\"暂无\"、\"停宰\"）\n\n"
+            "**排查步骤**：展开下方「📊 原始 Excel 结构预览」查看实际数据格式。"
+        )
+        # 原始数据预览
+        with st.expander("📊 原始 Excel 结构预览（调试用）", expanded=True):
+            _show_raw_excel_preview(fresh_path)
         return
+
+    # 数据概览
+    with st.expander("📋 数据概览", expanded=False):
+        col_a, col_b, col_c, col_d = st.columns(4)
+        with col_a:
+            st.metric("总记录数", len(price_df))
+        with col_b:
+            st.metric("产品数", price_df["product"].nunique())
+        with col_c:
+            st.metric("供应商数", price_df["supplier"].nunique() if "supplier" in price_df.columns else 0)
+        with col_d:
+            st.metric("日期范围", f"{price_df['date'].min().date()} ~ {price_df['date'].max().date()}")
+        st.caption(f"产品: {sorted(price_df['product'].unique().tolist())}")
+        st.caption(f"供应商: {sorted(price_df['supplier'].unique().tolist()) if 'supplier' in price_df.columns else []}")
 
     render_module_lead("📌 鲜品 / 冻品价格数据库｜区间报价取均值绘图，悬浮展示原始区间。支持日/周/月粒度、季节性与农历分析，提供鲜冻价差计算及行情业务预警。")
 
@@ -7231,25 +7522,52 @@ def render_fresh_frozen_module() -> None:
     elif sub_page == "冻品":
         render_single_price_page(price_df[price_df["dataset_type"] == "冻品"].copy(), "frozen", "冻品")
     else:
+        # ── 鲜冻价差：产品级 × 供应商级对比 ──
         fresh_df = price_df[price_df["dataset_type"] == "鲜品"].copy()
         frozen_df = price_df[price_df["dataset_type"] == "冻品"].copy()
-        col1, col2, col3 = st.columns([1, 1, 1])
+
+        if fresh_df.empty:
+            st.warning("无鲜品数据，无法计算鲜冻价差。请确认鲜品 Excel 中包含价格日报 sheet。")
+            return
+        if frozen_df.empty:
+            st.warning("无冻品数据，无法计算鲜冻价差。请确认冻品 Excel 中包含价格日报 sheet。")
+            return
+
+        st.markdown("**选择鲜品与冻品进行价差对比**（同产品名、不同品类间的价格差）")
+
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
             fresh_product = st.selectbox("鲜品产品", sorted(fresh_df["product"].unique()), key="spread_fresh_product")
         with col2:
-            frozen_product = st.selectbox("冻品产品", sorted(frozen_df["product"].unique()), key="spread_frozen_product")
+            fresh_suppliers = sorted(fresh_df[fresh_df["product"] == fresh_product]["supplier"].dropna().unique().tolist()) if "supplier" in fresh_df.columns else []
+            fresh_supplier = st.selectbox("鲜品供应商", fresh_suppliers, key="spread_fresh_supplier") if fresh_suppliers else None
         with col3:
-            frequency = st.selectbox("时间口径", FREQUENCY_OPTIONS, key="fresh_frozen_spread_frequency")
+            frozen_product = st.selectbox("冻品产品", sorted(frozen_df["product"].unique()), key="spread_frozen_product")
+        with col4:
+            frozen_suppliers = sorted(frozen_df[frozen_df["product"] == frozen_product]["supplier"].dropna().unique().tolist()) if "supplier" in frozen_df.columns else []
+            frozen_supplier = st.selectbox("冻品供应商", frozen_suppliers, key="spread_frozen_supplier") if frozen_suppliers else None
+
+        frequency = st.selectbox("时间口径", FREQUENCY_OPTIONS, key="fresh_frozen_spread_frequency")
         target_date = st.date_input("鲜冻价差分析日期", value=min(price_df["date"].max().date(), pd.Timestamp.today().date()), min_value=price_df["date"].min().date(), max_value=price_df["date"].max().date(), key="fresh_frozen_spread_date")
 
-        left = fresh_df[fresh_df["product"] == fresh_product][["date", "value"]].rename(columns={"value": "fresh_value"})
-        right = frozen_df[frozen_df["product"] == frozen_product][["date", "value"]].rename(columns={"value": "frozen_value"})
+        # 筛选
+        left_mask = fresh_df["product"] == fresh_product
+        if fresh_supplier:
+            left_mask &= fresh_df["supplier"] == fresh_supplier
+        right_mask = frozen_df["product"] == frozen_product
+        if frozen_supplier:
+            right_mask &= frozen_df["supplier"] == frozen_supplier
+
+        left = fresh_df[left_mask][["date", "value"]].rename(columns={"value": "fresh_value"})
+        right = frozen_df[right_mask][["date", "value"]].rename(columns={"value": "frozen_value"})
         spread_df = left.merge(right, on="date", how="inner")
         if spread_df.empty:
             st.warning("当前鲜品和冻品没有可重叠日期。")
             return
         spread_df["value"] = spread_df["fresh_value"] - spread_df["frozen_value"]
-        spread_df["series_name"] = f"{fresh_product}-{frozen_product}"
+        f_label = f"{fresh_product}" + (f" · {fresh_supplier}" if fresh_supplier else "")
+        z_label = f"{frozen_product}" + (f" · {frozen_supplier}" if frozen_supplier else "")
+        spread_df["series_name"] = f"{f_label} − {z_label}"
         spread_df["sheet"] = "鲜冻价差"
         spread_df["metric"] = "鲜冻价差"
         spread_df["province"] = "全部"
@@ -7257,9 +7575,58 @@ def render_fresh_frozen_module() -> None:
         spread_df["display_name"] = spread_df["series_name"]
         spread_df = enrich_date_features(spread_df)
 
-        render_plotly(build_multi_series_line_chart(spread_df, frequency, "鲜冻价差走势", hover_title="价差"), "fresh_frozen", "spread", fresh_product, frozen_product, frequency)
-        render_signal_messages("鲜冻价差提示", build_spread_alert_messages(spread_df, pd.Timestamp(target_date), f"{fresh_product}-{frozen_product}"), "当前价差未出现显著偏离。")
+        # 双轴图：左轴鲜品+冻品价格，右轴价差虚线
+        agg = aggregate_series_frequency(spread_df, frequency)
+        order = agg.sort_values("period")["period_label"].drop_duplicates().tolist()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=agg["period_label"], y=agg["value"],
+            mode="lines+markers", name=spread_df["series_name"].iloc[0],
+            yaxis="y",
+            line=dict(color="#DC2626", width=2.5, dash="dash"),
+            marker=dict(size=5),
+            hovertemplate=f"%{{x}}<br>价差：%{{y:.2f}}<extra></extra>",
+        ))
+        fig.update_layout(
+            title=f"鲜冻价差走势（{frequency}）—— {f_label} − {z_label}",
+            xaxis=dict(title="日期", type="category", categoryorder="array", categoryarray=order),
+            yaxis=dict(title="价差 (元)"),
+            template="plotly_white", hovermode="x unified",
+        )
+        render_plotly(fig, "fresh_frozen", "spread", fresh_product, frozen_product, frequency)
+        render_signal_messages("鲜冻价差提示", build_spread_alert_messages(spread_df, pd.Timestamp(target_date), spread_df["series_name"].iloc[0]), "当前价差未出现显著偏离。")
         _render_seasonal_section(spread_df, False, f"fresh_frozen_{fresh_product}_{frozen_product}", frequency)
+
+
+def _show_raw_excel_preview(file_path: str) -> None:
+    """显示 Excel 文件的原始结构预览，用于调试数据解析问题。"""
+    if not file_path or not Path(file_path).is_file():
+        st.info(f"文件不存在：{file_path}")
+        return
+    try:
+        wb = load_workbook(file_path, data_only=True, read_only=True)
+        for ws in wb.worksheets:
+            st.markdown(f"**Sheet: `{ws.title}`** ({ws.max_row} 行 × {ws.max_column} 列)")
+            rows = []
+            for i, row in enumerate(ws.iter_rows(values_only=True)):
+                values = list(row)
+                while values and values[-1] is None:
+                    values.pop()
+                rows.append(values)
+                if i >= 5:
+                    break
+            if rows:
+                # 构建 DataFrame 展示
+                max_len = max(len(r) for r in rows)
+                cols = [f"Col{j}" for j in range(max_len)]
+                data_rows = []
+                for r in rows:
+                    data_rows.append([str(v)[:30] if v is not None else "" for v in r] + [""] * (max_len - len(r)))
+                preview_df = pd.DataFrame(data_rows, columns=cols)
+                st.dataframe(preview_df, use_container_width=True)
+        wb.close()
+    except Exception as e:
+        st.error(f"读取失败：{e}")
 
 
 # -----------------------------
