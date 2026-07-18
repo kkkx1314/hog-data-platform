@@ -3273,7 +3273,40 @@ def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
     return df.sort_values(["dataset_type", "category", "product", "date"]).reset_index(drop=True)
 
 
+def _get_skip_reason(sheet_name: str, rows: list[list[Any]]) -> str:
+    """返回 sheet 被跳过的原因。"""
+    if any(kw in sheet_name for kw in ("名称", "对照")):
+        return f"sheet名含「名称/对照」"
+    if any("名称" in str(c) or "对照" in str(c) for c in rows[0] if c):
+        return f"第0行含「名称/对照」: {[c for c in rows[0][:5] if c]}"
+    first_val = rows[2][0] if len(rows) > 2 and rows[2] else None
+    if first_val is not None:
+        if isinstance(first_val, (int, float)):
+            return f"首行col0为数值但非日期格式 ({first_val})"
+        t = text_of(first_val)
+        if t:
+            return f"首行col0不匹配日期格式: {t[:30]!r}"
+    row1_text = " ".join(str(c) for c in rows[1][:5] if c)
+    return f"第1行无供应商关键字，且非宽表日期格式: {row1_text[:50]!r}"
+
+
 def _is_wide_format_sheet(sheet_name: str, rows: list[list[Any]]) -> bool:
+    """检测是否为宽表格式（5.鲜品冻品价格数据库.xlsx 格式）。
+    特征：Row 0=分类名, Row 1=产品名, Row 2 col 0='YYYY-MM-DD HH:MM:SS' 日期字符串。"""
+    if len(rows) < 3:
+        return False
+    if any(kw in sheet_name for kw in ("名称", "对照")):
+        return False
+    supplier_keywords = ["神农", "双汇", "牧原", "千喜鹤", "众品"]
+    row1_text = " ".join(str(c) for c in rows[1] if c)
+    if any(kw in row1_text for kw in supplier_keywords):
+        return False
+    first_val = rows[2][0] if len(rows) > 2 and rows[2] else None
+    if first_val is not None:
+        t = text_of(first_val)
+        if re.match(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", t):
+            return True
+    return False
     """检测是否为宽表格式（5.鲜品冻品价格数据库.xlsx 格式）。
     特征：Row 0=分类名, Row 1=产品名, Row 2 col 0='YYYY-MM-DD HH:MM:SS' 日期字符串。"""
     if len(rows) < 3:
