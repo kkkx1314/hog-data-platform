@@ -3221,41 +3221,55 @@ def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
     records: list[dict] = []
     sheets_processed = 0
     sheets_skipped = 0
+    parse_diag: list[str] = []  # 诊断信息
+
+    parse_diag.append(f"文件: {path_str}")
+    parse_diag.append(f"共 {len(sheets)} 个 sheet: {list(sheets.keys())}")
 
     for sheet, rows in sheets.items():
         if len(rows) < 3:
+            parse_diag.append(f"  [{sheet}] 跳过：行数不足 ({len(rows)} < 3)")
             sheets_skipped += 1
             continue
         if not _is_price_sheet(sheet, rows):
+            skip_reason = _get_skip_reason(sheet, rows)
+            parse_diag.append(f"  [{sheet}] 跳过：{skip_reason}")
             sheets_skipped += 1
             continue
 
         # Row 0: 产品名（合并单元格含 None，需 filled_right 填充）
-        # Row 1: 供应商名（交替排列，如 神农鲜品/双汇鲜品/神农鲜品/双汇鲜品...）
+        # Row 1: 供应商名（交替排列）
         product_row_raw = rows[0]
         supplier_row = rows[1]
         products_filled = filled_right([text_of(x) for x in product_row_raw])
 
-        # 判断是否为冻品（冻品有更多供应商，鲜品只有 2 个）
-        is_frozen = "冻品" in sheet
-
         n_cols = min(len(supplier_row), len(products_filled))
         if n_cols <= 1:
+            parse_diag.append(f"  [{sheet}] 跳过：列数不足 (n_cols={n_cols})")
             continue
 
-        for row in rows[2:]:
+        # 试用第一行数据测试日期解析
+        first_data_row = rows[2]
+        first_raw_date = first_data_row[0] if len(first_data_row) > 0 else None
+        test_date = _parse_month_day_float(first_raw_date) or _parse_week_range_date(first_raw_date)
+
+        sheet_records = 0
+        for row_idx, row in enumerate(rows[2:], start=2):
             if not row:
                 continue
 
-            # 尝试解析日期：优先浮点 M.DD（鲜品），其次周区间字符串（冻品）
+            # 尝试解析日期：优先浮点 M.DD（鲜品），其次周区间字符串（冻品），再尝试其他格式
             raw_date = row[0] if len(row) > 0 else None
             date = _parse_month_day_float(raw_date)
             if date is None:
                 date = _parse_week_range_date(raw_date)
             if date is None:
-                # 兜底：尝试标准 parse_date
                 date = parse_date(raw_date)
             if date is None:
+                # 再尝试通用日期解析
+                date = _try_loose_date_parse(raw_date)
+            if date is None:
+                parse_diag.append(f"  [{sheet}] Row {row_idx}: 日期解析失败 → {raw_date!r}")
                 continue
 
             for col in range(1, n_cols):
@@ -3263,30 +3277,89 @@ def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
                 supplier_name = text_of(supplier_row[col] if col < len(supplier_row) else None)
                 value = row[col] if col < len(row) else None
 
-                # 跳过明显非数值的值（如"暂无"、"停宰"等文本标记）
+                # 跳过明显非数值的值
                 if value is not None and isinstance(value, str):
                     cleaned = value.strip()
-                    if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—"):
+                    if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—", "停宰 ", ""):
                         continue
 
-                category = ""  # category 即为产品名
                 add_price_record(records, sheet, product_name, product_name, supplier_name, date, value)
+                sheet_records += 1
+
+        if sheet_records > 0:
+            products_set = sorted(set(r["product"] for r in records[-sheet_records:]))
+            suppliers_set = sorted(set(r["supplier"] for r in records[-sheet_records:]))
+            parse_diag.append(f"  [{sheet}] ✅ {sheet_records} 条 | 首日={test_date} | 产品={products_set[:5]}... | 供应商={suppliers_set}")
+        else:
+            parse_diag.append(f"  [{sheet}] ⚠️ 识别为价格表但未解析到记录 (首日解析={test_date}, n_cols={n_cols})")
 
         sheets_processed += 1
+
+    parse_diag.append(f"结果: {sheets_processed} 个sheet处理, {sheets_skipped} 个跳过, {len(records)} 条记录")
 
     if not records:
         cols = ["sheet", "dataset_type", "category", "product", "supplier", "series_name",
                 "date", "value", "mid_price", "low_price", "high_price",
                 "price_range_text", "province", "city", "display_name"]
         df = pd.DataFrame(columns=cols)
-        # 附加诊断信息
         df.attrs["sheets_processed"] = sheets_processed
         df.attrs["sheets_skipped"] = sheets_skipped
         df.attrs["total_sheets"] = sheets_processed + sheets_skipped
+        df.attrs["parse_diag"] = parse_diag
         return df
     df = pd.DataFrame(records)
     df = enrich_date_features(df)
+    df.attrs["parse_diag"] = parse_diag
     return df.sort_values(["dataset_type", "category", "product", "date"]).reset_index(drop=True)
+
+
+def _get_skip_reason(sheet_name: str, rows: list[list[Any]]) -> str:
+    """返回 sheet 被跳过的原因。"""
+    if any(kw in sheet_name for kw in ("名称", "对照")):
+        return f"sheet名含「名称/对照」"
+    if any("名称" in str(c) or "对照" in str(c) for c in rows[0] if c):
+        return f"第0行含「名称/对照」: {[c for c in rows[0][:5] if c]}"
+    first_val = rows[2][0] if len(rows) > 2 and rows[2] else None
+    if first_val is not None:
+        if isinstance(first_val, (int, float)):
+            return f"首行col0为数值但非日期格式 ({first_val})"
+        t = text_of(first_val)
+        if t:
+            return f"首行col0不匹配日期格式: {t[:30]!r}"
+    row1_text = " ".join(str(c) for c in rows[1][:5] if c)
+    return f"第1行无供应商关键字: {row1_text[:50]!r}"
+
+
+def _try_loose_date_parse(value: Any) -> pd.Timestamp | None:
+    """宽松日期解析：尝试多种格式。"""
+    t = text_of(value)
+    if not t:
+        return None
+    # 纯数字 -> 尝试月日浮点
+    if re.match(r"^\d{1,2}\.\d{1,2}$", t):
+        return _parse_month_day_float(float(t))
+    # 2025.5.16 格式
+    m = re.match(r"(\d{4})[./年](\d{1,2})[./月](\d{1,2})", t)
+    if m:
+        try:
+            return pd.Timestamp(year=int(m.group(1)), month=int(m.group(2)), day=int(m.group(3)))
+        except Exception:
+            pass
+    # 5/16 格式
+    m = re.match(r"(\d{1,2})/(\d{1,2})$", t)
+    if m:
+        try:
+            return pd.Timestamp(year=_CURRENT_YEAR, month=int(m.group(1)), day=int(m.group(2)))
+        except Exception:
+            pass
+    # 默认用 pandas 尝试
+    try:
+        parsed = pd.to_datetime(t, errors="coerce")
+        if pd.notna(parsed):
+            return pd.Timestamp(parsed)
+    except Exception:
+        pass
+    return None
 
 
 # -----------------------------
@@ -7529,13 +7602,25 @@ def render_fresh_frozen_module() -> None:
                           f"{frozen_df['supplier'].nunique()} 供应商（仅神农/牧原）")
             else:
                 st.warning("无数据")
-        st.info("**调试建议**：确保 `data/` 目录下有对应 Excel 文件，内含「价格日报」sheet。"
-                "鲜品日期为 M.DD 浮点（如 `5.16`），冻品为周区间（如 `\"5月18日-5月24日\"`）。")
-        with st.expander("📊 原始 Excel 结构预览", expanded=False):
-            t1, t2 = st.tabs(["鲜品文件", "冻品文件"])
+
+        # 显示解析诊断
+        with st.expander("🔍 详细解析诊断", expanded=True):
+            t1, t2 = st.tabs(["鲜品解析日志", "冻品解析日志"])
             with t1:
-                _show_raw_excel_preview(fresh_file or "")
+                fresh_diag = fresh_df.attrs.get("parse_diag", []) if not fresh_df.empty else ["无数据"]
+                st.code("\n".join(fresh_diag), language=None)
             with t2:
+                frozen_diag = frozen_df.attrs.get("parse_diag", []) if not frozen_df.empty else ["无数据"]
+                st.code("\n".join(frozen_diag), language=None)
+
+        st.info("**调试建议**：确保 `data/` 目录下有对应 Excel 文件，内含「价格日报」sheet。"
+                "鲜品日期为 M.DD 浮点（如 `5.16`），冻品为周区间（如 `\"5月18日-5月24日\"`）。"
+                "展开上方「🔍 详细解析诊断」查看每个 sheet 的处理结果。")
+        with st.expander("📊 原始 Excel 结构预览", expanded=False):
+            ta, tb = st.tabs(["鲜品文件", "冻品文件"])
+            with ta:
+                _show_raw_excel_preview(fresh_file or "")
+            with tb:
                 _show_raw_excel_preview(frozen_path or "")
         return
 
@@ -7563,7 +7648,16 @@ def render_fresh_frozen_module() -> None:
     if sub_page == "鲜品":
         render_single_price_page(fresh_view, "fresh", "鲜品")
     elif sub_page == "冻品":
-        render_single_price_page(frozen_view, "frozen", "冻品")
+        if frozen_view.empty:
+            st.warning("### ⚠️ 无冻品数据")
+            st.info("冻品数据为空，可能是文件缺失、sheet 被跳过或日期格式无法解析。")
+            with st.expander("🔍 冻品解析诊断", expanded=True):
+                frozen_diag = frozen_df.attrs.get("parse_diag", []) if not frozen_df.empty else ["冻品 DataFrame 为空"]
+                st.code("\n".join(frozen_diag), language=None)
+            with st.expander("📊 冻品原始 Excel 预览", expanded=False):
+                _show_raw_excel_preview(frozen_path or "")
+        else:
+            render_single_price_page(frozen_view, "frozen", "冻品")
     else:
         # ── 鲜冻价差 ──
         if fresh_view.empty:
