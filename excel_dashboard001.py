@@ -7649,12 +7649,15 @@ def render_fresh_frozen_module() -> None:
     with st.sidebar:
         st.header("📂 鲜冻品数据源")
         fresh_file = _resolve_data_path(r"神农肉业.*鲜品|鲜品价格", "神农鲜品")
-        # 冻品：优先使用指定本地路径，其次在 data/ 中搜索
+        # 冻品：精确匹配神农肉业-冻品价格，避免匹配到 5.鲜品冻品价格数据库.xlsx
         _FROZEN_LOCAL = Path(r"D:\CC\Desktop\平台数据\神农肉业-冻品价格.xlsx")
+        _FROZEN_REPO = _REPO_DATA / "神农肉业-冻品价格.xlsx"
         if _FROZEN_LOCAL.is_file():
             frozen_file = str(_FROZEN_LOCAL)
+        elif _FROZEN_REPO.is_file():
+            frozen_file = str(_FROZEN_REPO)
         else:
-            frozen_file = _resolve_data_path(r"神农肉业.*冻品|冻品价格", "神农冻品")
+            frozen_file = _resolve_data_path(r"神农肉业.*冻品价格\.xlsx", "神农冻品")
             if not frozen_file:
                 frozen_file = _resolve_data_path(r"冻品", "神农冻品")
         if not fresh_file and not frozen_file:
