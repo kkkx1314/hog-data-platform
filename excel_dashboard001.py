@@ -2494,22 +2494,42 @@ def build_yongyi_global_summary(numeric_df: pd.DataFrame, target_date: pd.Timest
     slaughter = get_sheet_metric_snapshot(numeric_df, "价格+宰量", ["屠宰量"], target_date)
     if slaughter is None:
         slaughter = get_sheet_metric_snapshot(numeric_df, "屠宰企业日度屠宰量", ["日度屠宰量"], target_date)
-    # 150/175kg猪价格从派生视图中取：优先标重猪直接快照
+    # 150/175kg猪较标猪价差：直接从散户标肥价差读取原始价差
+    fat_spread_150 = None
+    fat_spread_175 = None
     fat_spread_sheet_df = numeric_df[numeric_df["sheet"] == "散户标肥价差"].copy()
-    fat_spread = None
     if not fat_spread_sheet_df.empty:
-        price_view_df, _ = build_scattered_fat_price_views(fat_spread_sheet_df)
-        snap = get_snapshot_date(price_view_df, target_date) if not price_view_df.empty else None
-        if snap is not None:
-            snap_price = price_view_df[price_view_df["date"] == snap]
-            m150 = snap_price[snap_price["metric"] == "150公斤猪价格"]["value"].mean()
-            m_std = snap_price[snap_price["metric"] == "市场散户标重猪"]["value"].mean()
-            ref_val = m150 if pd.notna(m150) else m_std
-            if pd.notna(ref_val):
-                fat_spread = {"sheet": "散户标肥价差", "metric": "150公斤猪价格" if pd.notna(m150) else "市场散户标重猪", "value": float(ref_val), "date": snap, "prev_date": None, "prev_value": np.nan, "scope": "全国"}
-    standard_price = get_sheet_metric_snapshot(numeric_df, "市场主流标猪肥猪价格", ["标猪均价"], target_date)
-    fat_price = get_sheet_metric_snapshot(numeric_df, "市场主流标猪肥猪价格", ["150kg", "130-140"], target_date)
-    delivery_price = get_sheet_metric_snapshot(numeric_df, "交割地市出栏价", ["交割地出栏价"], target_date)
+        _, spread_view_df = build_scattered_fat_price_views(fat_spread_sheet_df)
+        if not spread_view_df.empty:
+            snap = get_snapshot_date(spread_view_df, target_date)
+            if snap is not None:
+                snap_spread = spread_view_df[spread_view_df["date"] == snap]
+                # 150kg较标猪价差
+                s150 = snap_spread[snap_spread["metric"].str.contains("150公斤", na=False)]
+                if not s150.empty:
+                    val_150 = s150["value"].mean()
+                    # 前一日
+                    prev_snap = get_snapshot_date(
+                        spread_view_df[spread_view_df["date"] < snap], snap - pd.Timedelta(days=1)
+                    ) if len(spread_view_df[spread_view_df["date"] < snap]) > 0 else None
+                    prev_150 = np.nan
+                    if prev_snap is not None:
+                        prev_spread = spread_view_df[spread_view_df["date"] == prev_snap]
+                        p150 = prev_spread[prev_spread["metric"].str.contains("150公斤", na=False)]
+                        if not p150.empty:
+                            prev_150 = p150["value"].mean()
+                    fat_spread_150 = {"metric": "150kg猪较标猪价差", "value": float(val_150), "prev_value": prev_150, "date": snap}
+                # 175kg较标猪价差
+                s175 = snap_spread[snap_spread["metric"].str.contains("175公斤", na=False)]
+                if not s175.empty:
+                    val_175 = s175["value"].mean()
+                    prev_175 = np.nan
+                    if prev_snap is not None:
+                        prev_spread = spread_view_df[spread_view_df["date"] == prev_snap]
+                        p175 = prev_spread[prev_spread["metric"].str.contains("175公斤", na=False)]
+                        if not p175.empty:
+                            prev_175 = p175["value"].mean()
+                    fat_spread_175 = {"metric": "175kg猪较标猪价差", "value": float(val_175), "prev_value": prev_175, "date": snap}
 
     lines: list[str] = []
     cards: list[dict[str, str]] = []
@@ -2528,16 +2548,17 @@ def build_yongyi_global_summary(numeric_df: pd.DataFrame, target_date: pd.Timest
         lines.append(f"屠宰量方面，当前口径为 {format_number(slaughter['value'])}，{describe_delta(delta, '较前一日')}。")
         cards.append({"label": "屠宰量", "value": format_number(slaughter["value"]), "extra": describe_delta(delta, "较前一日")})
 
-    if fat_spread is not None:
-        delta = fat_spread["value"] - fat_spread["prev_value"] if pd.notna(fat_spread["prev_value"]) else np.nan
+    if fat_spread_150 is not None:
+        delta = fat_spread_150["value"] - fat_spread_150["prev_value"] if pd.notna(fat_spread_150["prev_value"]) else np.nan
         spread_state = "走阔" if pd.notna(delta) and delta > 0 else ("收窄" if pd.notna(delta) and delta < 0 else "持平")
-        lines.append(f"150kg猪较标猪价差 {spread_state}，当前参考值 {format_number(fat_spread['value'])}。")
-        cards.append({"label": "150kg猪较标猪价差", "value": format_number(fat_spread['value']), "extra": f"{fat_spread['metric']}｜{describe_delta(delta, '较前一日')}"})
+        lines.append(f"150kg猪较标猪价差 {spread_state}，当前参考值 {format_number(fat_spread_150['value'])}，{describe_delta(delta, '较前一日')}。")
+        cards.append({"label": "150kg猪较标猪价差", "value": format_number(fat_spread_150["value"]), "extra": f"散户标肥价差｜{describe_delta(delta, '较前一日')}"})
 
-    if standard_price is not None and fat_price is not None:
-        premium = fat_price["value"] - standard_price["value"]
-        lines.append(f"175kg猪较标猪价差方面，肥猪较标猪升水 {format_number(premium)}。")
-        cards.append({"label": "175kg猪较标猪价差", "value": format_number(premium), "extra": f"肥猪 {format_number(fat_price['value'])} / 标猪 {format_number(standard_price['value'])}"})
+    if fat_spread_175 is not None:
+        delta = fat_spread_175["value"] - fat_spread_175["prev_value"] if pd.notna(fat_spread_175["prev_value"]) else np.nan
+        spread_state = "走阔" if pd.notna(delta) and delta > 0 else ("收窄" if pd.notna(delta) and delta < 0 else "持平")
+        lines.append(f"175kg猪较标猪价差 {spread_state}，当前参考值 {format_number(fat_spread_175['value'])}，{describe_delta(delta, '较前一日')}。")
+        cards.append({"label": "175kg猪较标猪价差", "value": format_number(fat_spread_175["value"]), "extra": f"散户标肥价差｜{describe_delta(delta, '较前一日')}"})
 
     brief = " ".join(lines[:4]) if lines else "暂无可用于汇总的现货数据。"
     return {
