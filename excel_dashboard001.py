@@ -5721,7 +5721,13 @@ def _resolve_data_path(pattern: str, label: str) -> str:
         f = _find_latest_file(pattern, _LOCAL_DATA)
         if f:
             return str(f)
-    st.sidebar.warning(f"未找到{label}数据文件（{pattern}）")
+    # 诊断：列出可用文件
+    available = list(_REPO_DATA.glob("*.xlsx")) if _REPO_DATA.exists() else []
+    if available:
+        names = ", ".join(f.name[:30] for f in available[:10])
+        st.sidebar.error(f"未找到{label}数据，可用文件: {names}")
+    else:
+        st.sidebar.error(f"data/ 目录为空，请运行同步脚本")
     return ""
 
 
