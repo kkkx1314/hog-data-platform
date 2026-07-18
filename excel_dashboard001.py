@@ -748,11 +748,7 @@ def format_number(value: float | None) -> str:
         return "暂无"
     if abs(value) >= 1000:
         return f"{value:,.0f}"
-    if abs(value) >= 100:
-        return f"{value:,.1f}"
-    if abs(value) >= 1:
-        return f"{value:,.2f}"
-    return f"{value:,.4f}"
+    return f"{value:,.2f}"
 
 
 def format_date_cn(ts: pd.Timestamp | None) -> str:
