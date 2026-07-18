@@ -6048,22 +6048,26 @@ def configure_yongyi_compare_controls(sheet: str, sheet_df: pd.DataFrame) -> dic
 
 
 def _resolve_data_path(pattern: str, label: str) -> str:
-    """从 data/ 目录按文件名模式匹配最新文件"""
-    f = _find_latest_file(pattern, _REPO_DATA)
+    """按文件名模式匹配最新文件，优先使用平台数据目录（与 PLATFORM_DATA_DIR 优先级一致）"""
+    # 优先搜索 PLATFORM_DATA_DIR（本地平台数据 > data/）
+    f = _find_latest_file(pattern, PLATFORM_DATA_DIR)
     if f:
         return str(f)
-    # 兜底：尝试本地平台数据目录
-    if _LOCAL_DATA.exists():
-        f = _find_latest_file(pattern, _LOCAL_DATA)
+    # 兜底：尝试另一个目录
+    fallback_dir = _REPO_DATA if PLATFORM_DATA_DIR == _LOCAL_DATA else _LOCAL_DATA
+    if fallback_dir.exists():
+        f = _find_latest_file(pattern, fallback_dir)
         if f:
             return str(f)
     # 诊断：列出可用文件
-    available = list(_REPO_DATA.glob("*.xlsx")) if _REPO_DATA.exists() else []
+    available = list(PLATFORM_DATA_DIR.glob("*.xlsx")) if PLATFORM_DATA_DIR.exists() else []
+    if not available and _REPO_DATA.exists():
+        available = list(_REPO_DATA.glob("*.xlsx"))
     if available:
         names = ", ".join(f.name[:30] for f in available[:10])
         st.sidebar.error(f"未找到{label}数据，可用文件: {names}")
     else:
-        st.sidebar.error(f"data/ 目录为空，请运行同步脚本")
+        st.sidebar.error(f"数据目录为空，请检查平台数据路径")
     return ""
 
 
