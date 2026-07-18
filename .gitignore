@@ -1,0 +1,13 @@
+__pycache__/
+.ipynb_checkpoints/
+.claude/
+~$*.xlsx
+*.pdf
+*.png
+*.csv
+*.pptx
+*.json
+*.log
+*.md
+!requirements.txt
+!README.md
