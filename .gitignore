@@ -1,7 +1,6 @@
 __pycache__/
 .ipynb_checkpoints/
 .claude/
-~$*.xlsx
 *.pdf
 *.png
 *.csv
@@ -10,4 +9,5 @@ __pycache__/
 *.log
 *.md
 !requirements.txt
-!README.md
+!data/*.xlsx
+~$*
