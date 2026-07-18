@@ -22,8 +22,11 @@ except Exception:
     LunarDate = None
 
 
-# ── 平台数据目录 ──
-PLATFORM_DATA_DIR = Path(r"D:\CC\Desktop\平台数据")
+# ── 数据目录：优先本地平台数据目录，其次项目内data目录（GitHub同步用）──
+_LOCAL_DATA = Path(r"D:\CC\Desktop\平台数据")
+_REPO_DATA = Path(__file__).parent / "data"
+_REPO_DATA.mkdir(exist_ok=True)
+PLATFORM_DATA_DIR = _LOCAL_DATA if _LOCAL_DATA.exists() else _REPO_DATA
 
 # ── 自动识别最新数据文件 ──
 def _find_latest_file(pattern: str, dir_path: Path = None) -> Path | None:
@@ -5708,21 +5711,17 @@ def configure_yongyi_compare_controls(sheet: str, sheet_df: pd.DataFrame) -> dic
     return result
 
 
-def _resolve_data_path(default_path: str, upload_key: str, file_types: list = ["xlsx", "xls"]) -> str:
-    """解析数据源：优先使用上传文件，否则用本地路径。返回文件路径或None。"""
-    uploaded = st.sidebar.file_uploader(f"📤 上传文件（云端使用）", type=file_types, key=upload_key,
-                                        help="上传后自动覆盖下方路径")
-    if uploaded is not None:
-        import tempfile, os
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded.name.rsplit('.',1)[-1]}")
-        tmp.write(uploaded.read())
-        tmp.close()
-        return tmp.name
-    if default_path and Path(default_path).exists():
-        return default_path
-    # 无本地文件时提示上传
-    if not uploaded:
-        st.sidebar.warning("未检测到本地数据文件，请上传Excel文件")
+def _resolve_data_path(pattern: str, label: str) -> str:
+    """从 data/ 目录按文件名模式匹配最新文件"""
+    f = _find_latest_file(pattern, _REPO_DATA)
+    if f:
+        return str(f)
+    # 兜底：尝试本地平台数据目录
+    if _LOCAL_DATA.exists():
+        f = _find_latest_file(pattern, _LOCAL_DATA)
+        if f:
+            return str(f)
+    st.sidebar.warning(f"未找到{label}数据文件（{pattern}）")
     return ""
 
 
@@ -5730,9 +5729,7 @@ def _resolve_data_path(default_path: str, upload_key: str, file_types: list = ["
 def render_yongyi_daily_module() -> None:
     with st.sidebar:
         st.header("📂 涌益日度数据源")
-        yongyi_path = _resolve_data_path(DEFAULT_YONGYI_PATH, "yongyi_upload")
-        if yongyi_path:
-            st.caption(f"📁 {Path(yongyi_path).name}" if "tmp" not in yongyi_path else "📤 已使用上传文件")
+        yongyi_path = _resolve_data_path(r"涌益.*日度|日度数据", "涌益日度")
     try:
         numeric_df, metadata_df, parse_log = build_yongyi_dataset_from_path(yongyi_path)
     except Exception as exc:
@@ -5922,9 +5919,7 @@ def render_yongyi_daily_module() -> None:
 def render_yongyi_weekly_module() -> None:
     with st.sidebar:
         st.header("📂 涌益周度数据源")
-        weekly_path = _resolve_data_path(DEFAULT_WEEKLY_PATH, "weekly_upload")
-        if weekly_path:
-            st.caption(f"📁 {Path(weekly_path).name}" if "tmp" not in weekly_path else "📤 已使用上传文件")
+        weekly_path = _resolve_data_path(r"涌益.*周度|周度数据", "涌益周度")
     try:
         weekly_df, weekly_meta = build_weekly_dataset_from_path(weekly_path)
     except Exception as exc:
@@ -6840,9 +6835,7 @@ def render_futures_module() -> None:
 def render_transport_module() -> None:
     with st.sidebar:
         st.header("📂 调运数据源")
-        transport_path = _resolve_data_path(DEFAULT_TRANSPORT_PATH, "transport_upload")
-        if transport_path:
-            st.caption(f"📁 {Path(transport_path).name}" if "tmp" not in transport_path else "📤 已使用上传文件")
+        transport_path = _resolve_data_path(r"猪只调运|调运分析", "调运")
     try:
         transport_df = build_transport_dataset_from_path(transport_path)
     except Exception as exc:
@@ -7197,9 +7190,7 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
 def render_fresh_frozen_module() -> None:
     with st.sidebar:
         st.header("📂 鲜冻品数据源")
-        fresh_path = _resolve_data_path(DEFAULT_FRESH_FROZEN_PATH, "fresh_upload")
-        if fresh_path:
-            st.caption(f"📁 {Path(fresh_path).name}" if "tmp" not in fresh_path else "📤 已使用上传文件")
+        fresh_path = _resolve_data_path(r"鲜品|神农肉业|冻品", "鲜冻品")
     try:
         price_df = build_fresh_frozen_dataset_from_path(fresh_path)
     except Exception as exc:
