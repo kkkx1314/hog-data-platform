@@ -2531,16 +2531,13 @@ def build_yongyi_global_summary(numeric_df: pd.DataFrame, target_date: pd.Timest
     if fat_spread is not None:
         delta = fat_spread["value"] - fat_spread["prev_value"] if pd.notna(fat_spread["prev_value"]) else np.nan
         spread_state = "走阔" if pd.notna(delta) and delta > 0 else ("收窄" if pd.notna(delta) and delta < 0 else "持平")
-        lines.append(f"肥标价差 {spread_state}，当前参考值 {format_number(fat_spread['value'])}。")
-        cards.append({"label": "肥标价差", "value": format_number(fat_spread["value"]), "extra": f"{fat_spread['metric']}｜{describe_delta(delta, '较前一日')}"})
+        lines.append(f"150kg猪较标猪价差 {spread_state}，当前参考值 {format_number(fat_spread['value'])}。")
+        cards.append({"label": "150kg猪较标猪价差", "value": format_number(fat_spread['value']), "extra": f"{fat_spread['metric']}｜{describe_delta(delta, '较前一日')}"})
 
     if standard_price is not None and fat_price is not None:
         premium = fat_price["value"] - standard_price["value"]
-        lines.append(f"主流体重价差方面，肥猪较标猪升水 {format_number(premium)}。")
-        cards.append({"label": "肥猪-标猪", "value": format_number(premium), "extra": f"肥猪 {format_number(fat_price['value'])} / 标猪 {format_number(standard_price['value'])}"})
-
-    if delivery_price is not None:
-        lines.append(f"交割地出栏价参考 {format_number(delivery_price['value'])}，仅按区域/地市均价展示，不再区分交易均重。")
+        lines.append(f"175kg猪较标猪价差方面，肥猪较标猪升水 {format_number(premium)}。")
+        cards.append({"label": "175kg猪较标猪价差", "value": format_number(premium), "extra": f"肥猪 {format_number(fat_price['value'])} / 标猪 {format_number(standard_price['value'])}"})
 
     brief = " ".join(lines[:4]) if lines else "暂无可用于汇总的现货数据。"
     return {
@@ -7770,7 +7767,7 @@ def render_fresh_frozen_module() -> None:
         else:
             render_single_price_page(frozen_view, "frozen", "冻品")
     else:
-        # ── 鲜冻价差 ──
+        # ── 鲜冻价差：冻品周度价格展开到每日，与鲜品日度价格对比 ──
         if fresh_view.empty:
             st.warning("无鲜品数据，无法计算鲜冻价差。")
             return
@@ -7778,38 +7775,112 @@ def render_fresh_frozen_module() -> None:
             st.warning("无冻品数据，无法计算鲜冻价差。")
             return
 
-        col1, col2, col3 = st.columns([1, 1, 1])
+        st.markdown("**冻品为周度价格（全周每日同一价格），鲜品为日度价格。选择产品与厂家进行对比。**")
+
+        # 获取供应商列表
+        fresh_suppliers_all = sorted(fresh_view["supplier"].dropna().unique().tolist()) if "supplier" in fresh_view.columns else []
+        frozen_suppliers_all = sorted(frozen_view["supplier"].dropna().unique().tolist()) if "supplier" in frozen_view.columns else []
+
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
             fresh_product = st.selectbox("鲜品产品", sorted(fresh_view["product"].unique()), key="spread_fresh_product")
         with col2:
-            frozen_product = st.selectbox("冻品产品", sorted(frozen_view["product"].unique()), key="spread_frozen_product")
+            f_sups = sorted(fresh_view[fresh_view["product"] == fresh_product]["supplier"].dropna().unique().tolist()) if fresh_suppliers_all else []
+            fresh_supplier = st.selectbox("鲜品厂家", f_sups, key="spread_fresh_supplier") if f_sups else None
         with col3:
-            frequency = st.selectbox("时间口径", FREQUENCY_OPTIONS, key="fresh_frozen_spread_frequency")
+            frozen_product = st.selectbox("冻品产品", sorted(frozen_view["product"].unique()), key="spread_frozen_product")
+        with col4:
+            z_sups = sorted(frozen_view[frozen_view["product"] == frozen_product]["supplier"].dropna().unique().tolist()) if frozen_suppliers_all else []
+            frozen_supplier = st.selectbox("冻品厂家", z_sups, key="spread_frozen_supplier") if z_sups else None
 
-        # 取第一个供应商的数据做价差
-        left = fresh_view[fresh_view["product"] == fresh_product][["date", "value"]].rename(columns={"value": "fresh_value"})
-        right = frozen_view[frozen_view["product"] == frozen_product][["date", "value"]].rename(columns={"value": "frozen_value"})
-        spread_df = left.merge(right, on="date", how="inner")
+        # 筛选鲜品日度数据
+        f_mask = fresh_view["product"] == fresh_product
+        if fresh_supplier:
+            f_mask &= fresh_view["supplier"] == fresh_supplier
+        fresh_daily = fresh_view[f_mask][["date", "value"]].copy()
+        fresh_daily = fresh_daily.groupby("date", as_index=False)["value"].mean()
+        fresh_daily = fresh_daily.rename(columns={"value": "fresh_value"})
+
+        # 筛选冻品周度数据
+        z_mask = frozen_view["product"] == frozen_product
+        if frozen_supplier:
+            z_mask &= frozen_view["supplier"] == frozen_supplier
+        frozen_weekly = frozen_view[z_mask][["date", "value"]].copy()
+        frozen_weekly = frozen_weekly.groupby("date", as_index=False)["value"].mean()
+        frozen_weekly = frozen_weekly.rename(columns={"value": "frozen_value"})
+
+        # 冻品周度价格展开到每日：每个周日期覆盖后续6天
+        frozen_daily_rows = []
+        for _, row in frozen_weekly.iterrows():
+            week_start = row["date"]
+            for d in range(7):  # 周度覆盖7天
+                frozen_daily_rows.append({
+                    "date": week_start + pd.Timedelta(days=d),
+                    "frozen_value": row["frozen_value"]
+                })
+        frozen_daily = pd.DataFrame(frozen_daily_rows)
+
+        # 合并：inner join 确保只保留两者都有的日期
+        spread_df = fresh_daily.merge(frozen_daily, on="date", how="inner")
         if spread_df.empty:
             st.warning("当前鲜品和冻品没有可重叠日期。")
             return
         spread_df["value"] = spread_df["fresh_value"] - spread_df["frozen_value"]
-        spread_df["series_name"] = f"{fresh_product} − {frozen_product}"
+        f_label = f"{fresh_product}" + (f" · {fresh_supplier}" if fresh_supplier else "")
+        z_label = f"{frozen_product}" + (f" · {frozen_supplier}" if frozen_supplier else "")
+        spread_df["series_name"] = f"{f_label} − {z_label}"
         spread_df["sheet"] = "鲜冻价差"
         spread_df["metric"] = "鲜冻价差"
         spread_df["province"] = "全部"
         spread_df["city"] = ""
         spread_df["display_name"] = spread_df["series_name"]
-        spread_df = enrich_date_features(spread_df)
 
-        render_plotly(build_multi_series_line_chart(spread_df, frequency, "鲜冻价差走势", hover_title="价差"),
-                      "fresh_frozen", "spread", fresh_product, frozen_product, frequency)
-        target_date_sp = price_df["date"].max()
-        if pd.notna(target_date_sp):
-            render_signal_messages("鲜冻价差提示",
-                                   build_spread_alert_messages(spread_df, target_date_sp, f"{fresh_product}−{frozen_product}"),
-                                   "当前价差未出现显著偏离。")
-        _render_seasonal_section(spread_df, False, f"fresh_frozen_{fresh_product}_{frozen_product}", frequency)
+        # 双轴图：左轴鲜品+冻品价格（实线），右轴价差（虚线）
+        fig = go.Figure()
+        # 鲜品价格
+        fig.add_trace(go.Scatter(
+            x=spread_df["date"], y=spread_df["fresh_value"],
+            mode="lines+markers", name=f_label,
+            yaxis="y",
+            line=dict(color="#2563EB", width=2),
+            marker=dict(size=4),
+            hovertemplate="%{x|%Y-%m-%d}<br>" + f"{f_label}：%{{y:.2f}}<extra></extra>",
+        ))
+        # 冻品价格（阶梯状，因为周度不变）
+        fig.add_trace(go.Scatter(
+            x=spread_df["date"], y=spread_df["frozen_value"],
+            mode="lines+markers", name=z_label,
+            yaxis="y",
+            line=dict(color="#DC2626", width=2, dash="dot"),
+            marker=dict(size=4),
+            hovertemplate="%{x|%Y-%m-%d}<br>" + f"{z_label}：%{{y:.2f}}<extra></extra>",
+        ))
+        # 价差虚线
+        fig.add_trace(go.Scatter(
+            x=spread_df["date"], y=spread_df["value"],
+            mode="lines", name=f"{f_label} − {z_label} 价差",
+            yaxis="y2",
+            line=dict(color="#9333EA", width=2.5, dash="dash"),
+            hovertemplate="%{x|%Y-%m-%d}<br>价差：%{y:.2f}<extra></extra>",
+        ))
+        fig.update_layout(
+            title=f"鲜冻价差走势 —— {f_label} − {z_label}",
+            xaxis=dict(title="日期", tickformat="%m-%d", gridcolor="#E5E7EB"),
+            yaxis=dict(title="价格 (元)", gridcolor="#E5E7EB"),
+            yaxis2=dict(title="价差 (元)", overlaying="y", side="right", showgrid=False),
+            template="plotly_white", hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5),
+            height=500,
+        )
+        render_plotly(fig, "fresh_frozen", "spread", fresh_product, frozen_product)
+
+        # 价差统计
+        st.caption(
+            f"价差均值 {spread_df['value'].mean():.2f} 元 ｜ "
+            f"最大 {spread_df['value'].max():.2f} 元 ｜ "
+            f"最小 {spread_df['value'].min():.2f} 元 ｜ "
+            f"共 {len(spread_df)} 个交易日"
+        )
 
 
 def _show_raw_excel_preview(file_path: str) -> None:
@@ -7875,7 +7946,7 @@ with st.sidebar:
     )
     module = st.radio(
         "当前模块",
-        ["涌益日度数据", "涌益周度数据", "调运分析", "鲜品数据库"],
+        ["涌益日度数据", "涌益周度数据", "调运分析", "鲜品和冻品数据库"],
         key="module",
         label_visibility="collapsed",
     )
