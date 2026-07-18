@@ -7856,7 +7856,13 @@ def render_fresh_frozen_module() -> None:
         # 合并：inner join 确保只保留两者都有的日期
         spread_df = fresh_daily.merge(frozen_daily, on="date", how="inner")
         if spread_df.empty:
-            st.warning("当前鲜品和冻品没有可重叠日期。")
+            f_dates = f"{fresh_daily['date'].min().date()} ~ {fresh_daily['date'].max().date()}" if not fresh_daily.empty else "无"
+            z_dates = f"{frozen_daily['date'].min().date()} ~ {frozen_daily['date'].max().date()}" if not frozen_daily.empty else "无"
+            z_weekly_dates = f"{frozen_weekly['date'].min().date()} ~ {frozen_weekly['date'].max().date()}" if not frozen_weekly.empty else "无"
+            st.warning(f"当前鲜品和冻品没有可重叠日期。\n\n"
+                       f"- 鲜品日度范围：{f_dates}（{len(fresh_daily)} 天）\n"
+                       f"- 冻品周度范围：{z_weekly_dates}（{len(frozen_weekly)} 周）\n"
+                       f"- 冻品展开后范围：{z_dates}（{len(frozen_daily)} 天）")
             return
         spread_df["value"] = spread_df["fresh_value"] - spread_df["frozen_value"]
         f_label = f"{fresh_product}" + (f" · {fresh_supplier}" if fresh_supplier else "")
