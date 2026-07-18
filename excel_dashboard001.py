@@ -5688,16 +5688,15 @@ def render_weekly_section(weekly_df: pd.DataFrame, target_date_value) -> None:
             else:
                 st.info("当前口径不适合地区对比展示。")
 
-    render_section_header("📊 近期数据一览")
-    snap_date = get_snapshot_date(sheet_df, target_date)
-    if snap_date is not None:
-        snap_df = sheet_df[sheet_df["date"] == snap_date].groupby("series_name", as_index=False)["value"].mean().sort_values("value", ascending=False)
-        if not snap_df.empty:
-            snap_df.columns = ["序列", "数值"]
-            snap_df["数值"] = snap_df["数值"].map(format_number)
-            st.dataframe(snap_df, hide_index=True, width='stretch')
-
-    st.caption(f"数据最新日期：{format_date_cn(pd.Timestamp(sheet_df['date'].max()))} | 记录点：{len(sheet_df)}")
+    with st.expander("📊 近期数据一览", expanded=False):
+        snap_date = get_snapshot_date(sheet_df, target_date)
+        if snap_date is not None:
+            snap_df = sheet_df[sheet_df["date"] == snap_date].groupby("series_name", as_index=False)["value"].mean().sort_values("value", ascending=False)
+            if not snap_df.empty:
+                snap_df.columns = ["序列", "数值"]
+                snap_df["数值"] = snap_df["数值"].map(format_number)
+                st.dataframe(snap_df, hide_index=True, width='stretch')
+        st.caption(f"数据最新日期：{format_date_cn(pd.Timestamp(sheet_df['date'].max()))} | 记录点：{len(sheet_df)}")
 
 
 # -----------------------------
