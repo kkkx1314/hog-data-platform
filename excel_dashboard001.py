@@ -3231,69 +3231,29 @@ def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
             parse_diag.append(f"  [{sheet}] 跳过：行数不足 ({len(rows)} < 3)")
             sheets_skipped += 1
             continue
-        if not _is_price_sheet(sheet, rows):
+
+        # ── 尝试标准格式（Row 0=产品名, Row 1=供应商名）──
+        standard_ok = _is_price_sheet(sheet, rows)
+        wide_ok = False
+        if not standard_ok:
+            wide_ok = _is_wide_format_sheet(sheet, rows)
+
+        if not standard_ok and not wide_ok:
             skip_reason = _get_skip_reason(sheet, rows)
             parse_diag.append(f"  [{sheet}] 跳过：{skip_reason}")
             sheets_skipped += 1
             continue
 
-        # Row 0: 产品名（合并单元格含 None，需 filled_right 填充）
-        # Row 1: 供应商名（交替排列）
-        product_row_raw = rows[0]
-        supplier_row = rows[1]
-        products_filled = filled_right([text_of(x) for x in product_row_raw])
-
-        n_cols = min(len(supplier_row), len(products_filled))
-        if n_cols <= 1:
-            parse_diag.append(f"  [{sheet}] 跳过：列数不足 (n_cols={n_cols})")
-            continue
-
-        # 试用第一行数据测试日期解析
-        first_data_row = rows[2]
-        first_raw_date = first_data_row[0] if len(first_data_row) > 0 else None
-        test_date = _parse_month_day_float(first_raw_date) or _parse_week_range_date(first_raw_date)
-
-        sheet_records = 0
-        for row_idx, row in enumerate(rows[2:], start=2):
-            if not row:
-                continue
-
-            # 尝试解析日期：优先浮点 M.DD（鲜品），其次周区间字符串（冻品），再尝试其他格式
-            raw_date = row[0] if len(row) > 0 else None
-            date = _parse_month_day_float(raw_date)
-            if date is None:
-                date = _parse_week_range_date(raw_date)
-            if date is None:
-                date = parse_date(raw_date)
-            if date is None:
-                # 再尝试通用日期解析
-                date = _try_loose_date_parse(raw_date)
-            if date is None:
-                parse_diag.append(f"  [{sheet}] Row {row_idx}: 日期解析失败 → {raw_date!r}")
-                continue
-
-            for col in range(1, n_cols):
-                product_name = text_of(products_filled[col] if col < len(products_filled) else None)
-                supplier_name = text_of(supplier_row[col] if col < len(supplier_row) else None)
-                value = row[col] if col < len(row) else None
-
-                # 跳过明显非数值的值
-                if value is not None and isinstance(value, str):
-                    cleaned = value.strip()
-                    if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—", "停宰 ", ""):
-                        continue
-
-                add_price_record(records, sheet, product_name, product_name, supplier_name, date, value)
-                sheet_records += 1
+        # ── 选择解析路径 ──
+        if standard_ok:
+            sheet_records = _parse_standard_sheet(sheet, rows, records, parse_diag)
+        else:
+            sheet_records = _parse_wide_format_sheet(sheet, rows, records, parse_diag)
 
         if sheet_records > 0:
-            products_set = sorted(set(r["product"] for r in records[-sheet_records:]))
-            suppliers_set = sorted(set(r["supplier"] for r in records[-sheet_records:]))
-            parse_diag.append(f"  [{sheet}] ✅ {sheet_records} 条 | 首日={test_date} | 产品={products_set[:5]}... | 供应商={suppliers_set}")
+            sheets_processed += 1
         else:
-            parse_diag.append(f"  [{sheet}] ⚠️ 识别为价格表但未解析到记录 (首日解析={test_date}, n_cols={n_cols})")
-
-        sheets_processed += 1
+            sheets_skipped += 1
 
     parse_diag.append(f"结果: {sheets_processed} 个sheet处理, {sheets_skipped} 个跳过, {len(records)} 条记录")
 
@@ -3313,21 +3273,131 @@ def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
     return df.sort_values(["dataset_type", "category", "product", "date"]).reset_index(drop=True)
 
 
-def _get_skip_reason(sheet_name: str, rows: list[list[Any]]) -> str:
-    """返回 sheet 被跳过的原因。"""
+def _is_wide_format_sheet(sheet_name: str, rows: list[list[Any]]) -> bool:
+    """检测是否为宽表格式（5.鲜品冻品价格数据库.xlsx 格式）。
+    特征：Row 0=分类名, Row 1=产品名, Row 2 col 0='YYYY-MM-DD HH:MM:SS' 日期字符串。"""
+    if len(rows) < 3:
+        return False
+    # 跳过名称对照
     if any(kw in sheet_name for kw in ("名称", "对照")):
-        return f"sheet名含「名称/对照」"
-    if any("名称" in str(c) or "对照" in str(c) for c in rows[0] if c):
-        return f"第0行含「名称/对照」: {[c for c in rows[0][:5] if c]}"
+        return False
+    # Row 1 不应包含供应商关键字（否则是标准格式）
+    supplier_keywords = ["神农", "双汇", "牧原", "千喜鹤", "众品"]
+    row1_text = " ".join(str(c) for c in rows[1] if c)
+    if any(kw in row1_text for kw in supplier_keywords):
+        return False
+    # Row 2 col 0 应为 YYYY-MM-DD 日期字符串
     first_val = rows[2][0] if len(rows) > 2 and rows[2] else None
     if first_val is not None:
-        if isinstance(first_val, (int, float)):
-            return f"首行col0为数值但非日期格式 ({first_val})"
         t = text_of(first_val)
-        if t:
-            return f"首行col0不匹配日期格式: {t[:30]!r}"
-    row1_text = " ".join(str(c) for c in rows[1][:5] if c)
-    return f"第1行无供应商关键字: {row1_text[:50]!r}"
+        if re.match(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", t):
+            return True
+    return False
+
+
+def _parse_standard_sheet(sheet: str, rows: list[list[Any]], records: list[dict],
+                          parse_diag: list[str]) -> int:
+    """解析标准格式（神农肉业-鲜品/冻品价格.xlsx）：Row 0=产品名, Row 1=供应商名, Row 2+=数据。"""
+    product_row_raw = rows[0]
+    supplier_row = rows[1]
+    products_filled = filled_right([text_of(x) for x in product_row_raw])
+
+    n_cols = min(len(supplier_row), len(products_filled))
+    if n_cols <= 1:
+        parse_diag.append(f"  [{sheet}] 跳过：列数不足 (n_cols={n_cols})")
+        return 0
+
+    first_data_row = rows[2]
+    first_raw_date = first_data_row[0] if len(first_data_row) > 0 else None
+    test_date = _parse_month_day_float(first_raw_date) or _parse_week_range_date(first_raw_date)
+
+    sheet_records = 0
+    for row_idx, row in enumerate(rows[2:], start=2):
+        if not row:
+            continue
+        raw_date = row[0] if len(row) > 0 else None
+        date = _parse_month_day_float(raw_date)
+        if date is None:
+            date = _parse_week_range_date(raw_date)
+        if date is None:
+            date = parse_date(raw_date)
+        if date is None:
+            date = _try_loose_date_parse(raw_date)
+        if date is None:
+            if sheet_records == 0:
+                parse_diag.append(f"  [{sheet}] Row {row_idx}: 日期解析失败 → {raw_date!r}")
+            continue
+
+        for col in range(1, n_cols):
+            product_name = text_of(products_filled[col] if col < len(products_filled) else None)
+            supplier_name = text_of(supplier_row[col] if col < len(supplier_row) else None)
+            value = row[col] if col < len(row) else None
+            if value is not None and isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—", "停宰 ", ""):
+                    continue
+            add_price_record(records, sheet, product_name, product_name, supplier_name, date, value)
+            sheet_records += 1
+
+    if sheet_records > 0:
+        products_set = sorted(set(r["product"] for r in records[-sheet_records:]))
+        suppliers_set = sorted(set(r["supplier"] for r in records[-sheet_records:]))
+        parse_diag.append(f"  [{sheet}] ✅ 标准格式 {sheet_records}条 | 首日={test_date} | 产品={products_set[:5]}... | 供应商={suppliers_set}")
+    else:
+        parse_diag.append(f"  [{sheet}] ⚠️ 标准格式但0条记录 (首日={test_date}, n_cols={n_cols})")
+    return sheet_records
+
+
+def _parse_wide_format_sheet(sheet: str, rows: list[list[Any]], records: list[dict],
+                              parse_diag: list[str]) -> int:
+    """解析宽表格式（5.鲜品冻品价格数据库.xlsx）：Row 0=分类名, Row 1=产品名, Row 2+=YYYY-MM-DD 日期+价格。"""
+    category_row = rows[0]
+    product_row = rows[1]
+    categories_filled = filled_right([text_of(x) for x in category_row])
+
+    n_cols = min(len(product_row), len(categories_filled))
+    if n_cols <= 1:
+        parse_diag.append(f"  [{sheet}] 跳过(宽表)：列数不足 (n_cols={n_cols})")
+        return 0
+
+    first_raw_date = rows[2][0] if len(rows) > 2 and rows[2] else None
+    try:
+        test_date = pd.Timestamp(first_raw_date) if first_raw_date else None
+    except Exception:
+        test_date = None
+
+    sheet_records = 0
+    for row_idx, row in enumerate(rows[2:], start=2):
+        if not row:
+            continue
+        raw_date = row[0] if len(row) > 0 else None
+        try:
+            date = pd.Timestamp(raw_date) if raw_date else None
+        except Exception:
+            date = None
+        if date is None or pd.isna(date):
+            if sheet_records == 0:
+                parse_diag.append(f"  [{sheet}] Row {row_idx}: 宽表日期解析失败 → {raw_date!r}")
+            continue
+
+        for col in range(1, n_cols):
+            product_name = text_of(product_row[col] if col < len(product_row) else None)
+            category_name = text_of(categories_filled[col] if col < len(categories_filled) else None)
+            value = row[col] if col < len(row) else None
+            if value is not None and isinstance(value, str):
+                cleaned = value.strip()
+                if cleaned in ("暂无", "停宰", "缺货", "-", "--", "无", "—", ""):
+                    continue
+            # 宽表格式无供应商信息，supplier 留空
+            add_price_record(records, sheet, category_name, product_name, "", date, value)
+            sheet_records += 1
+
+    if sheet_records > 0:
+        products_set = sorted(set(r["product"] for r in records[-sheet_records:]))
+        parse_diag.append(f"  [{sheet}] ✅ 宽表格式 {sheet_records}条 | 首日={test_date} | 产品={products_set[:5]}...")
+    else:
+        parse_diag.append(f"  [{sheet}] ⚠️ 宽表格式但0条记录 (首日={test_date}, n_cols={n_cols})")
+    return sheet_records
 
 
 def _try_loose_date_parse(value: Any) -> pd.Timestamp | None:
@@ -7573,8 +7643,11 @@ def render_fresh_frozen_module() -> None:
             frozen_df = build_fresh_frozen_dataset_from_path(frozen_path)
             if not frozen_df.empty:
                 frozen_df = frozen_df[frozen_df["dataset_type"] == "冻品"].copy()
-                # 冻品仅保留神农和牧原
-                frozen_df = frozen_df[frozen_df["supplier"].str.contains("神农|牧原", na=False)].copy()
+                # 冻品仅保留神农和牧原（仅当有供应商信息时过滤，宽表格式无供应商则保留全部）
+                if "supplier" in frozen_df.columns and frozen_df["supplier"].notna().any():
+                    has_supplier_data = frozen_df["supplier"].str.strip().str.len().sum() > 0
+                    if has_supplier_data:
+                        frozen_df = frozen_df[frozen_df["supplier"].str.contains("神农|牧原", na=False)].copy()
         except Exception as exc:
             st.error(f"冻品加载失败：{exc}")
 
