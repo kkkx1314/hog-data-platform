@@ -7196,7 +7196,10 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
 def render_fresh_frozen_module() -> None:
     with st.sidebar:
         st.header("📂 鲜冻品数据源")
-        fresh_path = _resolve_data_path(r"鲜品|神农肉业|冻品", "鲜冻品")
+        # 优先匹配神农肉业-鲜品价格
+        fresh_path = _resolve_data_path(r"神农肉业.*鲜品", "神农鲜品")
+        if not fresh_path:
+            fresh_path = _resolve_data_path(r"鲜品|冻品", "鲜冻品")
     try:
         price_df = build_fresh_frozen_dataset_from_path(fresh_path)
     except Exception as exc:
