@@ -3095,8 +3095,8 @@ def build_transport_dataset_from_path(path_str: str) -> pd.DataFrame:
 # 鲜冻品数据解析
 # -----------------------------
 
-# 预设年份（鲜品日期为 M.DD 浮点格式，无年份）
-_CURRENT_YEAR = 2025
+# 预设年份（鲜品/冻品日期无年份信息，默认当年）
+_CURRENT_YEAR = 2026
 
 
 def _parse_month_day_float(value: Any) -> pd.Timestamp | None:
