@@ -7656,7 +7656,11 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
         )
         order = agg.sort_values("period")["period_label"].drop_duplicates().tolist()
         fig = go.Figure()
-        colors = ["#2563EB", "#DC2626"]
+        # 鲜品用红色系，冻品用蓝色系，深浅区分不同厂家
+        if "鲜品" in page_title:
+            colors = ["#DC2626", "#F97316", "#B91C1C", "#EF4444"]  # 红色系（深→浅）
+        else:
+            colors = ["#2563EB", "#0891B2", "#1E40AF", "#3B82F6"]  # 蓝色系（深→浅）
         for i, sname in enumerate(sorted(agg["series_name"].dropna().unique())):
             sub = agg[agg["series_name"] == sname]
             fig.add_trace(go.Scatter(
