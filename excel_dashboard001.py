@@ -1314,13 +1314,31 @@ def workbook_to_rows(workbook) -> dict[str, list[list[Any]]]:
     return sheets
 
 
+def _get_file_version(path_str: str) -> str:
+    """返回带文件修改时间的版本字符串，用于缓存键自动失效。"""
+    try:
+        path = resolve_excel_path(path_str)
+        stat = path.stat()
+        return f"{path_str}@@v={stat.st_mtime:.6f}_sz={stat.st_size}"
+    except Exception:
+        return path_str
+
+
 @st.cache_data(show_spinner=False)
-def read_workbook_rows_from_path(path_str: str) -> dict[str, list[list[Any]]]:
-    path = resolve_excel_path(path_str)
+def _cached_read_workbook_rows(versioned_path: str) -> dict[str, list[list[Any]]]:
+    """内部缓存函数：versioned_path 包含 mtime，文件更新时自动失效。"""
+    # 提取真实路径（去掉 @@v=... 后缀）
+    real_path = versioned_path.split("@@v=")[0]
+    path = resolve_excel_path(real_path)
     wb = load_workbook(path, data_only=True, read_only=True)
     sheets = workbook_to_rows(wb)
     wb.close()
     return sheets
+
+
+def read_workbook_rows_from_path(path_str: str) -> dict[str, list[list[Any]]]:
+    """读取 Excel 工作簿，缓存自动感知文件更新时间。"""
+    return _cached_read_workbook_rows(_get_file_version(path_str))
 
 
 @st.cache_data(show_spinner=False)
@@ -1598,7 +1616,6 @@ def build_yongyi_dataset_from_rows(sheets: dict[str, list[list[Any]]]) -> tuple[
     return finalize_numeric_df(numeric_records), pd.DataFrame(metadata_records), pd.DataFrame(logs)
 
 
-@st.cache_data(show_spinner=False)
 def build_yongyi_dataset_from_path(path_str: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     sheets = read_workbook_rows_from_path(path_str)
     return build_yongyi_dataset_from_rows(sheets)
@@ -3057,9 +3074,14 @@ def finalize_futures_df(records: list[dict]) -> pd.DataFrame:
     return df.sort_values(["sheet", "metric", "contract", "date"]).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False)
 def build_futures_dataset_from_path(path_str: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    sheets = read_workbook_rows_from_path(path_str)
+    return _cached_build_futures_dataset_from_path(_get_file_version(path_str))
+
+
+@st.cache_data(show_spinner=False)
+def _cached_build_futures_dataset_from_path(versioned_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    real_path = versioned_path.split("@@v=")[0]
+    sheets = read_workbook_rows_from_path(real_path)
     records: list[dict] = []
     logs: list[dict] = []
     for sheet, rows in sheets.items():
@@ -3086,9 +3108,14 @@ def build_futures_dataset_from_path(path_str: str) -> tuple[pd.DataFrame, pd.Dat
 # -----------------------------
 # 调运数据解析
 # -----------------------------
-@st.cache_data(show_spinner=False)
 def build_transport_dataset_from_path(path_str: str) -> pd.DataFrame:
-    path = resolve_excel_path(path_str)
+    return _cached_build_transport_dataset_from_path(_get_file_version(path_str))
+
+
+@st.cache_data(show_spinner=False)
+def _cached_build_transport_dataset_from_path(versioned_path: str) -> pd.DataFrame:
+    real_path = versioned_path.split("@@v=")[0]
+    path = resolve_excel_path(real_path)
     df = pd.read_excel(path)
     rename_map = {col: text_of(col) for col in df.columns}
     df = df.rename(columns=rename_map)
@@ -3231,19 +3258,22 @@ def add_price_record(records: list[dict], sheet: str, category: str, product: st
     )
 
 
-@st.cache_data(show_spinner=False)
 def build_fresh_frozen_dataset_from_path(path_str: str) -> pd.DataFrame:
-    """从神农肉业鲜品/冻品 Excel 解析价格数据。
-    支持两种日期格式：鲜品浮点 M.DD（如 5.16）、冻品周区间字符串（如"5月18日-5月24日"）。
-    数据结构：Row 0 = 产品名列（合并单元格，用 filled_right 填充），Row 1 = 供应商名，Row 2+ = 日期+价格。
-    """
-    sheets = read_workbook_rows_from_path(path_str)
+    """从神农肉业鲜品/冻品 Excel 解析价格数据。缓存自动感知文件更新时间。"""
+    return _cached_build_fresh_frozen_dataset_from_path(_get_file_version(path_str))
+
+
+@st.cache_data(show_spinner=False)
+def _cached_build_fresh_frozen_dataset_from_path(versioned_path: str) -> pd.DataFrame:
+    """内部缓存函数：versioned_path 包含 mtime，文件更新时自动失效。"""
+    real_path = versioned_path.split("@@v=")[0]
+    sheets = read_workbook_rows_from_path(real_path)
     records: list[dict] = []
     sheets_processed = 0
     sheets_skipped = 0
     parse_diag: list[str] = []  # 诊断信息
 
-    parse_diag.append(f"文件: {path_str}")
+    parse_diag.append(f"文件: {real_path}")
     parse_diag.append(f"共 {len(sheets)} 个 sheet: {list(sheets.keys())}")
 
     for sheet, rows in sheets.items():
@@ -4984,14 +5014,20 @@ def finalize_weekly_df(records: list[dict]) -> pd.DataFrame:
     return df.sort_values(["sheet", "freq_type", "metric", "series_name", "date"]).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False)
 def build_weekly_dataset_from_path(path_str: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """读取涌益周度 Excel。缓存自动感知文件更新时间。"""
+    return _cached_build_weekly_dataset_from_path(_get_file_version(path_str))
+
+
+@st.cache_data(show_spinner=False)
+def _cached_build_weekly_dataset_from_path(versioned_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     读取涌益周度 Excel，自动跳过说明/目录/停更 sheet，
     识别最新更新日期，距离最新主更新超过 60 天的 sheet 标记为停更并隐藏。
     返回：(data_df, meta_df[sheet, mode, latest_date, stale])
     """
-    sheets = read_workbook_rows_from_path(path_str)
+    real_path = versioned_path.split("@@v=")[0]
+    sheets = read_workbook_rows_from_path(real_path)
     all_records: list[dict] = []
     meta_rows: list[dict] = []
 
@@ -7995,6 +8031,9 @@ with st.sidebar:
     )
     st.markdown("---")
     st.caption("使用说明：在左侧选择模块后，对应数据源路径与筛选条件将出现在下方。各模块顶部会生成智能摘要。")
+    if st.sidebar.button("🔄 清除缓存并刷新", use_container_width=True, help="数据文件更新后，点击此按钮清除缓存并重新加载最新数据"):
+        st.cache_data.clear()
+        st.rerun()
 
 if module == "涌益日度数据":
     render_yongyi_daily_module()
