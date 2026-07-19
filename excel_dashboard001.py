@@ -7658,9 +7658,9 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
         fig = go.Figure()
         # 鲜品红色系，冻品蓝色系，不同厂家深浅区分
         if "鲜品" in page_title:
-            colors = ["#DC2626", "#EF4444", "#B91C1C", "#FCA5A5"]  # 红：标准、亮红、深红、浅红
+            colors = ["#991B1B", "#EF4444", "#7F1D1D", "#FCA5A5"]  # 红：暗红、亮红、深红、浅红
         else:
-            colors = ["#2563EB", "#3B82F6", "#1E40AF", "#93C5FD"]  # 蓝：标准、亮蓝、深蓝、浅蓝
+            colors = ["#1E3A8A", "#60A5FA", "#1E40AF", "#93C5FD"]  # 蓝：暗蓝、亮蓝、深蓝、浅蓝
         for i, sname in enumerate(sorted(agg["series_name"].dropna().unique())):
             sub = agg[agg["series_name"] == sname]
             fig.add_trace(go.Scatter(
@@ -7700,9 +7700,9 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
             s2.assign(series_name=label2),
         ], ignore_index=True)
         if "鲜品" in page_title:
-            color_seq = ["#DC2626", "#EF4444"]  # 红色系
+            color_seq = ["#991B1B", "#EF4444"]  # 红色系：暗红、亮红
         else:
-            color_seq = ["#2563EB", "#3B82F6"]  # 蓝色系
+            color_seq = ["#1E3A8A", "#60A5FA"]  # 蓝色系：暗蓝、亮蓝
         fig = px.line(
             aggregate_series_frequency(combined, frequency),
             x="period_label", y="value", color="series_name",
