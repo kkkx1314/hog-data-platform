@@ -7916,7 +7916,7 @@ def render_fresh_frozen_module() -> None:
 
         # 双轴图：左轴鲜品+冻品价格（实线），右轴价差（虚线）
         fig = go.Figure()
-        # 鲜品价格
+        # 鲜品价格 实线
         fig.add_trace(go.Scatter(
             x=spread_df["date"], y=spread_df["fresh_value"],
             mode="lines+markers", name=f_label,
@@ -7925,16 +7925,16 @@ def render_fresh_frozen_module() -> None:
             marker=dict(size=4),
             hovertemplate="%{x|%Y-%m-%d}<br>" + f"{f_label}：%{{y:.2f}}<extra></extra>",
         ))
-        # 冻品价格（阶梯状，因为周度不变）
+        # 冻品价格 实线（周度阶梯展开）
         fig.add_trace(go.Scatter(
             x=spread_df["date"], y=spread_df["frozen_value"],
             mode="lines+markers", name=z_label,
             yaxis="y",
-            line=dict(color="#DC2626", width=2, dash="dot"),
+            line=dict(color="#DC2626", width=2),
             marker=dict(size=4),
             hovertemplate="%{x|%Y-%m-%d}<br>" + f"{z_label}：%{{y:.2f}}<extra></extra>",
         ))
-        # 价差虚线
+        # 价差 虚线
         fig.add_trace(go.Scatter(
             x=spread_df["date"], y=spread_df["value"],
             mode="lines", name=f"{f_label} − {z_label} 价差",
