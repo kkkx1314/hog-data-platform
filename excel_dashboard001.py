@@ -7941,7 +7941,7 @@ def render_fresh_frozen_module() -> None:
             x=spread_df["date"], y=spread_df["fresh_value"],
             mode="lines+markers", name=f_label,
             yaxis="y",
-            line=dict(color="#DC2626", width=2),
+            line=dict(color="#EF4444", width=2),
             marker=dict(size=4),
             hovertemplate="%{x|%Y-%m-%d}<br>" + f"{f_label}：%{{y:.2f}}<extra></extra>",
         ))
@@ -7950,7 +7950,7 @@ def render_fresh_frozen_module() -> None:
             x=spread_df["date"], y=spread_df["frozen_value"],
             mode="lines+markers", name=z_label,
             yaxis="y",
-            line=dict(color="#2563EB", width=2),
+            line=dict(color="#3B82F6", width=2),
             marker=dict(size=4),
             hovertemplate="%{x|%Y-%m-%d}<br>" + f"{z_label}：%{{y:.2f}}<extra></extra>",
         ))
