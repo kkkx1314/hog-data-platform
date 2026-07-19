@@ -7656,18 +7656,18 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
         )
         order = agg.sort_values("period")["period_label"].drop_duplicates().tolist()
         fig = go.Figure()
-        # 鲜品用红色系，冻品用蓝色系，深浅区分不同厂家
+        # 鲜品红色系，冻品蓝色系，不同厂家深浅区分
         if "鲜品" in page_title:
-            colors = ["#DC2626", "#F97316", "#B91C1C", "#EF4444"]  # 红色系（深→浅）
+            colors = ["#DC2626", "#EF4444", "#B91C1C", "#FCA5A5"]  # 红：标准、亮红、深红、浅红
         else:
-            colors = ["#2563EB", "#0891B2", "#1E40AF", "#3B82F6"]  # 蓝色系（深→浅）
+            colors = ["#2563EB", "#3B82F6", "#1E40AF", "#93C5FD"]  # 蓝：标准、亮蓝、深蓝、浅蓝
         for i, sname in enumerate(sorted(agg["series_name"].dropna().unique())):
             sub = agg[agg["series_name"] == sname]
             fig.add_trace(go.Scatter(
                 x=sub["period_label"], y=sub["value"],
                 mode="lines+markers", name=sname,
                 yaxis="y",
-                line=dict(color=colors[i % 2], width=2),
+                line=dict(color=colors[i % len(colors)], width=2),
                 marker=dict(size=5),
                 hovertemplate=f"%{{x}}<br>{sname}：%{{y:.2f}}<extra></extra>",
             ))
@@ -7694,12 +7694,28 @@ def render_single_price_page(price_df: pd.DataFrame, page_key: str, page_title: 
         )
         render_plotly(fig, page_key, "spread_chart", selected_product, supplier_1, supplier_2, frequency)
     else:
-        # 单轴图
+        # 单轴图：也用红/蓝色系区分厂家
         combined = pd.concat([
             s1.assign(series_name=label1),
             s2.assign(series_name=label2),
         ], ignore_index=True)
-        render_plotly(build_product_price_chart(combined, frequency, f"{selected_product} 价格走势（{frequency}）"), page_key, "price_chart", selected_product, frequency)
+        if "鲜品" in page_title:
+            color_seq = ["#DC2626", "#EF4444"]  # 红色系
+        else:
+            color_seq = ["#2563EB", "#3B82F6"]  # 蓝色系
+        fig = px.line(
+            aggregate_series_frequency(combined, frequency),
+            x="period_label", y="value", color="series_name",
+            color_discrete_sequence=color_seq,
+            markers=False,
+        )
+        fig.update_traces(hovertemplate="日期：%{x}<br>%{fullData.name}：%{y:.2f}<extra></extra>", line=dict(width=2))
+        fig.update_layout(
+            title=f"{selected_product} 价格走势（{frequency}）",
+            xaxis_title="日期", yaxis_title="价格 (元)",
+            template="plotly_white", hovermode="x unified",
+        )
+        render_plotly(fig, page_key, "price_chart", selected_product, frequency)
 
     # ── 异常提示 ──
     s1_for_alert = s1.copy()
