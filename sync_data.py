@@ -23,7 +23,7 @@ if PLATFORM.exists():
         copied += 1
     print(f"  复制完成 ({copied} 个文件)")
 else:
-    print(f"  ⚠️ 平台数据目录不存在: {PLATFORM}")
+    print(f"  [WARN] 平台数据目录不存在: {PLATFORM}")
 
 # [2/5]
 print()
@@ -55,7 +55,7 @@ if transport_files:
         old = transport_files[1][0]
         print(f"  (调运目录共 {len(transport_files)} 个日期段，上次截止 {old[:4]}.{old[4:6]}.{old[6:]})")
 else:
-    print(f"  ⚠️ 未在 {TRANSPORT_DIR} 找到调运分析文件")
+    print(f"  [WARN] 未在 {TRANSPORT_DIR} 找到调运分析文件")
 
 # [3/5]
 print()
