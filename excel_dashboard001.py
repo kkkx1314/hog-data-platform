@@ -8019,14 +8019,13 @@ def _show_raw_excel_preview(file_path: str) -> None:
 # -----------------------------
 # 数据更新器
 # -----------------------------
-_TRANSPORT_SOURCE_DIR = Path(r"C:\Users\CC")
 _TRANSPORT_FILE_PATTERN = re.compile(r"(\d{8})-(\d{8})猪只调运智能分析结果（二次去重版）\.xlsx")
 
 
-def _sync_data_to_github() -> dict:
+def _sync_data_to_github(platform_src: str, transport_src: str) -> dict:
     """执行数据更新器同步流程：
-    1. 将 D:\\CC\\Desktop\\平台数据 中的 Excel 复制到 data/（GitHub 版本）
-    2. 从 C:\\Users\\CC\\ 扫描最新调运分析文件，同步到平台数据目录和 data/
+    1. 将 platform_src 中的 Excel 复制到 data/（GitHub 版本）
+    2. 从 transport_src 扫描最新调运分析文件，同步到平台数据目录和 data/
     3. Git add → commit → push
 
     返回值: {"success": bool, "messages": list[str], "files_copied": list[str]}
@@ -8034,7 +8033,8 @@ def _sync_data_to_github() -> dict:
     messages: list[str] = []
     files_copied: list[str] = []
     base_dir = Path(__file__).parent
-    platform_dir = Path(r"D:\CC\Desktop\平台数据")
+    platform_dir = Path(platform_src) if platform_src else _LOCAL_DATA
+    transport_dir = Path(transport_src) if transport_src else _LOCAL_DATA
     repo_data_dir = base_dir / "data"
     repo_data_dir.mkdir(exist_ok=True)
 
@@ -8056,14 +8056,15 @@ def _sync_data_to_github() -> dict:
         else:
             messages.append(f"⚠️ 平台数据目录不存在：{platform_dir}")
 
-        # ── Step 2: 扫描 C:\\Users\\CC\\ 中最新的调运分析文件 ──
+        # ── Step 2: 扫描调运分析文件（最新日期优先）──
         transport_files: list[tuple[str, str, Path]] = []  # (end_date, start_date, path)
-        for f in _TRANSPORT_SOURCE_DIR.glob("*.xlsx"):
-            if f.name.startswith("~$"):
-                continue
-            m = _TRANSPORT_FILE_PATTERN.match(f.name)
-            if m:
-                transport_files.append((m.group(2), m.group(1), f))
+        if transport_dir.exists():
+            for f in transport_dir.glob("*.xlsx"):
+                if f.name.startswith("~$"):
+                    continue
+                m = _TRANSPORT_FILE_PATTERN.match(f.name)
+                if m:
+                    transport_files.append((m.group(2), m.group(1), f))
 
         if transport_files:
             # 按截止日期降序排列，取最新的
@@ -8087,7 +8088,7 @@ def _sync_data_to_github() -> dict:
                 old_label = f"{old_end[:4]}.{old_end[4:6]}.{old_end[6:]}"
                 messages.append(f"📋 调运目录共有 {len(transport_files)} 个日期段文件，上次截止 {old_label}，已更新至最新")
         else:
-            messages.append(f"⚠️ 未在 {_TRANSPORT_SOURCE_DIR} 找到调运分析文件（匹配模式：YYYYMMDD-YYYYMMDD猪只调运…二次去重版.xlsx）")
+            messages.append(f"⚠️ 未在 {transport_dir} 找到调运分析文件（匹配模式：YYYYMMDD-YYYYMMDD猪只调运…二次去重版.xlsx）")
 
         # ── Step 3: Git 提交与推送 ──
         try:
@@ -8173,14 +8174,48 @@ with st.sidebar:
     with st.expander("📦 数据更新器", expanded=False):
         st.markdown(
             "<p style='font-size:12px;color:#64748b;margin:0 0 6px 0'>"
-            "将 <b>D:\\CC\\Desktop\\平台数据</b> 同步到 GitHub 版本，"
-            "同时自动检测 <b>C:\\Users\\CC\\</b> 中最新的调运分析文件并一并同步。</p>",
+            "将平台数据同步到 <b>data/</b> 并推送到 GitHub。"
+            "同时自动扫描调运分析文件中的最新日期数据。</p>",
             unsafe_allow_html=True,
         )
+
+        # 路径配置
+        default_platform = str(_LOCAL_DATA) if _LOCAL_DATA.exists() else ""
+        default_transport = str(_LOCAL_DATA) if _LOCAL_DATA.exists() else ""
+        st.text_input("平台数据目录", value=default_platform,
+                      key="sync_platform_dir",
+                      placeholder=r"D:\CC\Desktop\平台数据",
+                      help="涌益日度/周度、鲜冻品等数据所在的文件夹")
+        st.text_input("调运数据目录", value=default_transport,
+                      key="sync_transport_dir",
+                      placeholder=r"C:\Users\CC（调运分析文件所在文件夹）",
+                      help="猪只调运智能分析结果（二次去重版）.xlsx 所在的文件夹")
+
+        # 路径状态提示
+        col1, col2 = st.columns(2)
+        with col1:
+            platform_ok = Path((st.session_state.get("sync_platform_dir") or default_platform or "").strip('"').strip("'")).exists()
+            st.caption(f"平台目录：{'✅ 可访问' if platform_ok else '⚠️ 不可访问'}")
+        with col2:
+            transport_dir = Path((st.session_state.get("sync_transport_dir") or default_transport or "").strip('"').strip("'"))
+            transport_ok = transport_dir.exists()
+            # 额外检查是否有调运文件
+            has_transport = transport_ok and any(
+                _TRANSPORT_FILE_PATTERN.match(f.name) for f in transport_dir.glob("*.xlsx") if not f.name.startswith("~$")
+            )
+            st.caption(f"调运目录：{'✅ 有文件' if has_transport else '⚠️ 无调运文件'}")
+
         if st.button("🚀 执行数据同步", use_container_width=True, key="data_sync_btn",
                      help="同步平台数据 + 最新调运数据 → data/ → Git 提交推送"):
+            platform_src = st.session_state.get("sync_platform_dir", "").strip().strip('"').strip("'")
+            transport_src = st.session_state.get("sync_transport_dir", "").strip().strip('"').strip("'")
+            if not platform_src:
+                platform_src = default_platform
+            if not transport_src:
+                transport_src = default_transport
+
             with st.spinner("正在同步数据…"):
-                sync_result = _sync_data_to_github()
+                sync_result = _sync_data_to_github(platform_src, transport_src)
             if sync_result["success"]:
                 st.success("✅ 数据同步完成！")
             else:
