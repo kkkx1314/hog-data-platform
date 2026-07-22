@@ -8034,7 +8034,7 @@ def _sync_data_to_github(platform_src: str, transport_src: str) -> dict:
     files_copied: list[str] = []
     base_dir = Path(__file__).parent
     platform_dir = Path(platform_src) if platform_src else _LOCAL_DATA
-    transport_dir = Path(transport_src) if transport_src else _LOCAL_DATA
+    transport_dir = Path(transport_src) if transport_src else Path(r"C:\Users\CC")
     repo_data_dir = base_dir / "data"
     repo_data_dir.mkdir(exist_ok=True)
 
@@ -8181,7 +8181,7 @@ with st.sidebar:
 
         # 路径配置
         default_platform = str(_LOCAL_DATA) if _LOCAL_DATA.exists() else ""
-        default_transport = str(_LOCAL_DATA) if _LOCAL_DATA.exists() else ""
+        default_transport = r"C:\Users\CC"
         st.text_input("平台数据目录", value=default_platform,
                       key="sync_platform_dir",
                       placeholder=r"D:\CC\Desktop\平台数据",
