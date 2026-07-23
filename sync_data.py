@@ -41,7 +41,7 @@ else:
 # [2/5] 扫描最新调运数据
 print()
 print("[2/5] 扫描最新调运数据...")
-pattern = re.compile(r"(\d{8})-(\d{8}).*二次去重版\.xlsx")
+pattern = re.compile(r"(\d{8})-(\d{8}).*二次去重版.*\.xlsx")
 transport_files = []
 for f in TRANSPORT_DIR.glob("*.xlsx"):
     if f.name.startswith("~$"):
