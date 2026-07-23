@@ -3207,10 +3207,10 @@ def _cached_build_transport_merged(versions: tuple) -> pd.DataFrame:
         return pd.DataFrame()
 
     merged = pd.concat(frames, ignore_index=True)
-    # 去重：同路线+同日期的记录，保留最后出现的（全量→二次去重顺序，后者优先）
+    # 去重：同路线+同日期的记录，优先保留全量合并版（先加载的）
     dedup_keys = ["调出省份", "调入省份", "调出城市", "调入城市", "日期"]
     before = len(merged)
-    merged = merged.drop_duplicates(subset=dedup_keys, keep="last").reset_index(drop=True)
+    merged = merged.drop_duplicates(subset=dedup_keys, keep="first").reset_index(drop=True)
     after = len(merged)
     if before > after:
         st.info(f"[调运合并] {len(loaded)} 个文件合并完成，去重移除 {before - after} 条重叠记录（保留最新版本）")
