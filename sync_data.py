@@ -100,36 +100,9 @@ if transport_files:
         shutil.copy2(latest_file, PLATFORM / latest_file.name)
         print(f"  -> 已复制到平台数据目录")
 
-        # 清理平台数据目录中被取代的旧调运文件
-        for old in PLATFORM.glob("*调运*.xlsx"):
-            if old.name.startswith("~$") or old.name == latest_file.name:
-                continue
-            if "全量合并" in old.name or "二次去重" in old.name:
-                print(f"  清理平台旧调运: {old.name}")
-                old.unlink()
-                deleted_files.append(f"[平台] {old.name}")
-                deleted_names.add(old.name)
-
     # 复制到 data/
     shutil.copy2(latest_file, DATA / latest_file.name)
     print(f"  -> 已复制到 data/")
-
-    # 清理 data/ 中被取代的旧调运文件
-    for old in DATA.glob("*调运*.xlsx"):
-        if old.name.startswith("~$") or old.name == latest_file.name:
-            continue
-        if "全量合并" in old.name or "二次去重" in old.name:
-            print(f"  清理 data 旧调运: {old.name}")
-            old.unlink()
-            deleted_files.append(f"[data] {old.name}")
-            deleted_names.add(old.name)
-
-    # 从摘要中清除被删除的旧调运记录
-    for cat in list(synced.keys()):
-        synced[cat] = [(t, n) for t, n in synced[cat] if n not in deleted_names]
-        if not synced[cat]:
-            del synced[cat]
-    seen_files.difference_update(deleted_names)
 
     # 记录最新调运到摘要
     add_synced("猪只调运数据", f"{sd} ~ {ed}", latest_file.name)
