@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 import base64
+import datetime
 import hashlib
 import re
 
@@ -74,6 +75,31 @@ def _find_transport() -> str:
     f = _find_latest_file(r"调运")
     if f: return str(f)
     return ""
+
+
+def _find_all_transport_files() -> list[Path]:
+    """返回数据目录中所有调运数据文件的路径列表，按文件名排序确保全量在前、增量在后"""
+    search_dirs = [PLATFORM_DATA_DIR]
+    if _REPO_DATA != PLATFORM_DATA_DIR:
+        search_dirs.append(_REPO_DATA)
+
+    files: dict[str, Path] = {}  # 用 name 去重
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for f in d.glob("*.xlsx"):
+            if f.name.startswith("~$"):
+                continue
+            m = re.search(r"猪只调运|调运.*分析|调运", f.name, re.IGNORECASE)
+            if m:
+                files.setdefault(f.name, f)
+
+    # 排序：全量合并在前，二次去重在后（确保后加载的优先保留）
+    result = sorted(files.values(), key=lambda f: (
+        0 if "全量合并" in f.name else (1 if "二次去重" in f.name else 2),
+        f.name,
+    ))
+    return result
 
 
 def _find_fresh_frozen() -> str:
@@ -3136,6 +3162,62 @@ def _cached_build_transport_dataset_from_path(versioned_path: str) -> pd.DataFra
     temp["城市路线"] = temp["调出省份"] + "-" + temp["调出城市"] + " → " + temp["调入省份"] + "-" + temp["调入城市"]
     temp["count"] = 1
     return temp.sort_values(["date", "调出省份", "调入省份", "调出城市", "调入城市"]).reset_index(drop=True)
+
+
+# ── 合并加载：全量合并 + 二次去重，去重保留最新 ──
+def build_transport_dataset_merged() -> pd.DataFrame:
+    """加载所有调运数据文件，按关键字段去重（二次去重优先），合并为完整数据集。"""
+    files = _find_all_transport_files()
+    if not files:
+        return pd.DataFrame()
+    # 用所有文件的 version 作为缓存 key
+    versions = tuple(_get_file_version(str(f)) for f in files)
+    return _cached_build_transport_merged(versions)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_build_transport_merged(versions: tuple) -> pd.DataFrame:
+    frames = []
+    loaded = []
+    for ver in versions:
+        real = ver.split("@@v=")[0]
+        try:
+            path = resolve_excel_path(real)
+            df = pd.read_excel(path)
+            rename_map = {col: text_of(col) for col in df.columns}
+            df = df.rename(columns=rename_map)
+            needed = ["调出省份", "调入省份", "调出城市", "调入城市", "日期"]
+            if not all(c in df.columns for c in needed):
+                continue
+            df["date"] = pd.to_datetime(df["日期"], errors="coerce").dt.normalize()
+            df["调出省份"] = df["调出省份"].map(canonicalize_province)
+            df["调入省份"] = df["调入省份"].map(canonicalize_province)
+            df["调出城市"] = df["调出城市"].map(clean_city_name)
+            df["调入城市"] = df["调入城市"].map(clean_city_name)
+            df = df[df["date"].notna()]
+            df = df[df["调出省份"].isin(VALID_PROVINCES) & df["调入省份"].isin(VALID_PROVINCES)]
+            df = df[df["调出城市"].map(is_valid_city_name) & df["调入城市"].map(is_valid_city_name)]
+            df["count"] = 1
+            frames.append(df)
+            loaded.append(path.name)
+        except Exception:
+            continue
+
+    if not frames:
+        return pd.DataFrame()
+
+    merged = pd.concat(frames, ignore_index=True)
+    # 去重：同路线+同日期的记录，保留最后出现的（全量→二次去重顺序，后者优先）
+    dedup_keys = ["调出省份", "调入省份", "调出城市", "调入城市", "日期"]
+    before = len(merged)
+    merged = merged.drop_duplicates(subset=dedup_keys, keep="last").reset_index(drop=True)
+    after = len(merged)
+    if before > after:
+        st.info(f"[调运合并] {len(loaded)} 个文件合并完成，去重移除 {before - after} 条重叠记录（保留最新版本）")
+
+    merged["省际路线"] = merged["调出省份"] + "→" + merged["调入省份"]
+    merged["城市路线"] = merged["调出省份"] + "-" + merged["调出城市"] + " → " + merged["调入省份"] + "-" + merged["调入城市"]
+    return merged.sort_values(["date", "调出省份", "调入省份", "调出城市", "调入城市"]).reset_index(drop=True)
 
 
 # -----------------------------
@@ -7217,9 +7299,16 @@ def render_futures_module() -> None:
 def render_transport_module() -> None:
     with st.sidebar:
         st.header("📂 调运数据源")
-        transport_path = _resolve_data_path(r"猪只调运|调运分析", "调运")
+        # 列出所有已加载的调运文件
+        transport_files = _find_all_transport_files()
+        if transport_files:
+            st.caption(f"已加载 {len(transport_files)} 个调运数据文件")
+            for f in transport_files:
+                mtime = f.stat().st_mtime
+                mtime_str = datetime.datetime.fromtimestamp(mtime).strftime("%m-%d %H:%M")
+                st.caption(f"  · {f.name[:35]}… ({mtime_str})")
     try:
-        transport_df = build_transport_dataset_from_path(transport_path)
+        transport_df = build_transport_dataset_merged()
     except Exception as exc:
         st.error(f"调运数据载入失败：{exc}")
         return
@@ -7227,7 +7316,7 @@ def render_transport_module() -> None:
         st.warning("调运数据为空。")
         return
 
-    render_module_lead("📌 猪只调运监测｜来源：微信物流群信息提取（已二次去重）。提供重点区域定向监控与自定义路线分析，并自动识别放量/缩量异常。")
+    render_module_lead("📌 猪只调运监测｜来源：微信物流群信息提取（全量合并+二次去重，自动去重保留最新）。提供重点区域定向监控与自定义路线分析，并自动识别放量/缩量异常。")
     page = st.radio("选择页面", ["重点监控看板", "自定义分析"], horizontal=True, key="transport_page")
     max_date = transport_df["date"].max()
     min_date = transport_df["date"].min()
