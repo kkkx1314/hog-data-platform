@@ -3179,7 +3179,8 @@ def build_transport_dataset_merged() -> pd.DataFrame:
 def _cached_build_transport_merged(versions: tuple) -> pd.DataFrame:
     frames = []
     loaded = []
-    for ver in versions:
+    file_max_dates = []  # 每个文件的最大日期
+    for idx, ver in enumerate(versions):
         real = ver.split("@@v=")[0]
         try:
             path = resolve_excel_path(real)
@@ -3198,8 +3199,10 @@ def _cached_build_transport_merged(versions: tuple) -> pd.DataFrame:
             df = df[df["调出省份"].isin(VALID_PROVINCES) & df["调入省份"].isin(VALID_PROVINCES)]
             df = df[df["调出城市"].map(is_valid_city_name) & df["调入城市"].map(is_valid_city_name)]
             df["count"] = 1
+            df["_src_idx"] = idx  # 标记来源：0=全量, 1=二次去重, ...
             frames.append(df)
             loaded.append(path.name)
+            file_max_dates.append(df["date"].max())
         except Exception:
             continue
 
@@ -3207,12 +3210,22 @@ def _cached_build_transport_merged(versions: tuple) -> pd.DataFrame:
         return pd.DataFrame()
 
     merged = pd.concat(frames, ignore_index=True)
-    # 去重：完全相同（所有字段一致）的记录才算重复，优先保留全量合并版
-    before = len(merged)
+    total_before = len(merged)
+
+    # 重叠日期策略：每个日期只保留 _src_idx 最小的文件数据
+    # 全量(idx=0)覆盖 3.31-7.16，二次(idx=1)覆盖 7.13-7.22
+    # 7.13-7.16 两个文件都有 → 只保留全量(idx=0)
+    # 7.17-7.22 仅二次有 → 保留二次(idx=1)
+    date_min_src = merged.groupby("date")["_src_idx"].min()
+    merged = merged[merged["_src_idx"] == merged["date"].map(date_min_src)].copy()
+
+    # 再按全字段去重（处理同一文件内或同时存在的完全相同记录）
+    merged = merged.drop(columns=["_src_idx"])
     merged = merged.drop_duplicates(keep="first").reset_index(drop=True)
     after = len(merged)
-    if before > after:
-        st.info(f"[调运合并] {len(loaded)} 个文件合并完成，去重移除 {before - after} 条完全相同的重叠记录")
+
+    if total_before > after:
+        st.info(f"[调运合并] {len(loaded)} 个文件合并完成，重叠日期取全量版，共 {after:,} 条记录（去重移除 {total_before - after:,} 条）")
 
     merged["省际路线"] = merged["调出省份"] + "→" + merged["调入省份"]
     merged["城市路线"] = merged["调出省份"] + "-" + merged["调出城市"] + " → " + merged["调入省份"] + "-" + merged["调入城市"]
