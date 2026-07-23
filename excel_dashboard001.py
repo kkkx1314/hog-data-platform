@@ -7311,16 +7311,9 @@ def render_futures_module() -> None:
 def render_transport_module() -> None:
     with st.sidebar:
         st.header("📂 调运数据源")
-        # 列出所有已加载的调运文件
-        transport_files = _find_all_transport_files()
-        if transport_files:
-            st.caption(f"已加载 {len(transport_files)} 个调运数据文件")
-            for f in transport_files:
-                mtime = f.stat().st_mtime
-                mtime_str = datetime.datetime.fromtimestamp(mtime).strftime("%m-%d %H:%M")
-                st.caption(f"  · {f.name[:35]}… ({mtime_str})")
+        transport_path = _resolve_data_path(r"猪只调运|调运分析", "调运")
     try:
-        transport_df = build_transport_dataset_merged()
+        transport_df = build_transport_dataset_from_path(transport_path)
     except Exception as exc:
         st.error(f"调运数据载入失败：{exc}")
         return
@@ -7328,7 +7321,7 @@ def render_transport_module() -> None:
         st.warning("调运数据为空。")
         return
 
-    render_module_lead("📌 猪只调运监测｜来源：微信物流群信息提取（全量合并+二次去重，自动去重保留最新）。提供重点区域定向监控与自定义路线分析，并自动识别放量/缩量异常。")
+    render_module_lead("📌 猪只调运监测｜来源：微信物流群信息提取（全量合并，每日同步追加）。提供重点区域定向监控与自定义路线分析，并自动识别放量/缩量异常。")
     page = st.radio("选择页面", ["重点监控看板", "自定义分析"], horizontal=True, key="transport_page")
     max_date = transport_df["date"].max()
     min_date = transport_df["date"].min()
