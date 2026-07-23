@@ -11,47 +11,50 @@ TRANSPORT_DIR = Path(r"C:\Users\CC")
 DATA = BASE / "data"
 DATA.mkdir(exist_ok=True)
 
-# 收集同步信息
+# 收集同步信息（用文件名去重）
 synced = {}          # {类别: [(日期标签, 文件名)]}
+seen_files = set()   # 已记录的文件名，避免重复
 transport_info = None
-deleted_files = []
+deleted_files = []   # 已删除的文件名列表（用于展示）
+deleted_names = set()  # 已删除的文件名集合（用于去重摘要）
 
 
-def classify_file(name: str):
-    """根据文件名识别数据类别"""
+def classify_file(name: str) -> str:
     if "日度" in name:
         return "涌益日度数据"
     if "周度" in name:
         return "涌益周度数据"
-    if "调运" in name or "二次去重" in name:
+    if "调运" in name:
         return "猪只调运数据"
     if "鲜品" in name:
         return "神农肉业-鲜品价格"
     if "冻品" in name:
         return "神农肉业-冻品价格"
-    return "其他数据"
+    return "其他"
 
 
 def extract_date_tag(name: str) -> str:
-    """从文件名提取日期标签"""
-    # 匹配 2026年7月22日 这种
     m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", name)
     if m:
         return f"{m.group(1)}.{int(m.group(2)):02d}.{int(m.group(3)):02d}"
-    # 匹配 2026.7.10-2026.7.16 这种
     m = re.search(r"(\d{4}\.\d{1,2}\.\d{1,2}).*?(\d{4}\.\d{1,2}\.\d{1,2})", name)
     if m:
         return f"{m.group(1)} ~ {m.group(2)}"
-    # 匹配 20260331-20260716 这种(8位数字)
     m = re.search(r"(\d{8})-(\d{8})", name)
     if m:
         a, b = m.group(1), m.group(2)
         return f"{a[:4]}.{a[4:6]}.{a[6:]} ~ {b[:4]}.{b[4:6]}.{b[6:]}"
-    # 单个日期
     m = re.search(r"(\d{4}\.\d{1,2}\.\d{1,2})", name)
     if m:
         return m.group(1)
     return ""
+
+
+def add_synced(cat: str, tag: str, fname: str):
+    """添加同步记录，按文件名去重"""
+    if fname not in seen_files:
+        seen_files.add(fname)
+        synced.setdefault(cat, []).append((tag, fname))
 
 
 # [1/5] 复制平台数据
@@ -64,7 +67,7 @@ if PLATFORM.exists():
         shutil.copy2(f, DATA / f.name)
         cat = classify_file(f.name)
         tag = extract_date_tag(f.name)
-        synced.setdefault(cat, []).append((tag, f.name))
+        add_synced(cat, tag, f.name)
         print(f"  {f.name}")
         copied += 1
     print(f"  复制完成 ({copied} 个文件)")
@@ -92,14 +95,44 @@ if transport_files:
     print(f"  文件: {latest_file.name}")
     transport_info = (f"{sd} ~ {ed}", latest_file.name)
 
+    # 复制到平台数据目录
     if PLATFORM.exists():
         shutil.copy2(latest_file, PLATFORM / latest_file.name)
         print(f"  -> 已复制到平台数据目录")
+
+        # 清理平台数据目录中被取代的旧调运文件
+        for old in PLATFORM.glob("*调运*.xlsx"):
+            if old.name.startswith("~$") or old.name == latest_file.name:
+                continue
+            if "全量合并" in old.name or "二次去重" in old.name:
+                print(f"  清理平台旧调运: {old.name}")
+                old.unlink()
+                deleted_files.append(f"[平台] {old.name}")
+                deleted_names.add(old.name)
+
+    # 复制到 data/
     shutil.copy2(latest_file, DATA / latest_file.name)
     print(f"  -> 已复制到 data/")
 
-    # 合并到 synced
-    synced.setdefault("猪只调运数据", []).append((f"{sd} ~ {ed}", latest_file.name))
+    # 清理 data/ 中被取代的旧调运文件
+    for old in DATA.glob("*调运*.xlsx"):
+        if old.name.startswith("~$") or old.name == latest_file.name:
+            continue
+        if "全量合并" in old.name or "二次去重" in old.name:
+            print(f"  清理 data 旧调运: {old.name}")
+            old.unlink()
+            deleted_files.append(f"[data] {old.name}")
+            deleted_names.add(old.name)
+
+    # 从摘要中清除被删除的旧调运记录
+    for cat in list(synced.keys()):
+        synced[cat] = [(t, n) for t, n in synced[cat] if n not in deleted_names]
+        if not synced[cat]:
+            del synced[cat]
+    seen_files.difference_update(deleted_names)
+
+    # 记录最新调运到摘要
+    add_synced("猪只调运数据", f"{sd} ~ {ed}", latest_file.name)
 
     if len(transport_files) > 1:
         old = transport_files[1][0]
@@ -107,7 +140,7 @@ if transport_files:
 else:
     print(f"  [WARN] 未在 {TRANSPORT_DIR} 找到调运分析文件")
 
-# [3/5] 清理旧文件
+# [3/5] 清理 data/ 中平台目录已不存在的旧文件
 print()
 print("[3/5] 清理旧文件...")
 if PLATFORM.exists():
@@ -117,6 +150,7 @@ if PLATFORM.exists():
         if f.name not in src_names and not f.name.startswith("~$"):
             print(f"  删除 {f.name}")
             deleted_files.append(f.name)
+            deleted_names.add(f.name)
             f.unlink()
 if not deleted_files:
     print("  无需清理")
@@ -149,7 +183,6 @@ print("=" * 55)
 print("        本次同步数据清单")
 print("=" * 55)
 
-# 按类别有序展示
 order = ["涌益日度数据", "涌益周度数据", "猪只调运数据", "神农肉业-鲜品价格", "神农肉业-冻品价格"]
 shown = set()
 for cat in order:
@@ -163,24 +196,19 @@ for cat in order:
                 print(f"    {fname}")
         shown.add(cat)
 
-# 其他未分类
 for cat, items in synced.items():
     if cat not in shown:
         print(f"  [{cat}]")
         for tag, fname in items:
             print(f"    {fname}")
 
-if transport_info:
-    ttag, tfname = transport_info
-    # 调运数据已在上面显示
-
 if deleted_files:
     print()
-    print(f"  [已清理旧文件] {len(deleted_files)} 个")
+    print(f"  [已清理] {len(deleted_files)} 个旧文件")
 
 if changed_files:
     print()
-    print(f"  [Git] 已提交 {len(changed_files)} 个变更，已推送到 GitHub")
+    print(f"  [Git] 已提交并推送到 GitHub")
 else:
     print()
     print(f"  [Git] 无变更")
