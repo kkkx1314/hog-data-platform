@@ -202,7 +202,7 @@ def _plotly_js():
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"Microsoft YaHei","PingFang SC",-apple-system,sans-serif;background:#f4f6f9;color:#1f2937;line-height:1.55;}
-.page{max-width:1120px;margin:0 auto;padding:28px 30px 52px;}
+.page{max-width:1440px;margin:0 auto;padding:28px 30px 52px;}
 .title{font-size:24px;font-weight:800;color:#1f2937;letter-spacing:.5px;padding:0 18px;}
 .sub{color:#64748b;font-size:13px;margin-top:6px;padding:0 18px;}
 .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px;padding:0 18px;}
@@ -348,7 +348,7 @@ function render(){
     const traces=tracesFor(prov, cutoff);
     const allY=[];
     traces.forEach(function(t){allY.push.apply(allY, t.y);});
-    Plotly.react('chart_'+i, traces, chartLayout(300, paddedYRange(allY)), {responsive:true});
+    Plotly.react('chart_'+i, traces, chartLayout(330, paddedYRange(allY)), {responsive:true});
   });
 }
 
@@ -633,13 +633,12 @@ def build_yunnan_report_html(yunnan, latest_date):
 <div class="sub">企业报价 + 云南散户标猪 / 150kg / 175kg 价格与肥标价差</div>
 
 <div class="section">
-  <div class="section-title">企业报价</div>
+  <div class="section-title"><span>企业报价</span><span style="margin-left:14px;font-size:13px;font-weight:600;color:#2563eb;">报价日期：<b id="priceDateLabel" style="color:#1f2937;">—</b></span></div>
   <div class="card">
     <table class="quote">
       <thead><tr><th style="width:34%;">企业</th><th style="width:32%;">毛猪体重段</th><th>报价（元/kg）</th></tr></thead>
       <tbody id="quoteTableBody"></tbody>
     </table>
-    <div style="margin-top:12px;font-size:14px;color:#1f2937;">报价日期：<b id="priceDateLabel">—</b></div>
     <button class="btn ghost" onclick="toggleEdit()">编辑报价</button>
     <div class="edit-wrap" id="editWrap" style="display:none;">
       <div class="ctrl" style="margin-bottom:10px;"><label>价格日期</label><select id="priceDateSel" onchange="updatePriceDate()"></select></div>
