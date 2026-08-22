@@ -535,7 +535,7 @@ function updateQuotes(){
   tb.innerHTML='';
   rows.forEach(function(r){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td>'+esc(r.name)+'</td><td>'+esc(r.quote)+'</td><td>'+esc(r.weight)+'</td>';
+    tr.innerHTML='<td>'+esc(r.name)+'</td><td>'+esc(r.weight)+'</td><td>'+esc(r.quote)+'</td>';
     tb.appendChild(tr);
   });
 }
@@ -585,7 +585,7 @@ def build_yunnan_report_html(yunnan, latest_date):
   <div class="section-title">企业报价</div>
   <div class="card">
     <table class="quote">
-      <thead><tr><th style="width:34%;">企业</th><th style="width:30%;">报价（元/kg）</th><th>毛猪体重段</th></tr></thead>
+      <thead><tr><th style="width:34%;">企业</th><th style="width:32%;">毛猪体重段</th><th>报价（元/kg）</th></tr></thead>
       <tbody id="quoteTableBody"></tbody>
     </table>
     <button class="btn ghost" onclick="toggleEdit()">编辑报价</button>
