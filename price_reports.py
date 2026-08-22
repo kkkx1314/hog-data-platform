@@ -43,18 +43,30 @@ YN_YEARS = [2023, 2024, 2025, 2026]
 
 
 # ============ 数据发现 ============
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 def discover_files():
-    """扫描桌面，返回按日期升序排列的 [(date, path), ...]。"""
-    pattern = os.path.join(DESKTOP, "*涌益咨询日度数据.xlsx")
+    """扫描桌面与仓库 data/ 目录，返回按日期升序排列的 [(date, path), ...]。
+
+    桌面（D:\\CC\\Desktop）用于本地；仓库 data/ 用于 Streamlit Cloud 等环境。
+    """
+    search_dirs = [DESKTOP, os.path.join(_BASE_DIR, "data")]
     dated = []
-    for f in glob.glob(pattern):
-        base = os.path.basename(f)
-        if base.startswith("~$"):
+    seen = set()
+    for d in search_dirs:
+        if not os.path.isdir(d):
             continue
-        m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", base)
-        if m:
-            d = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            dated.append((d, f))
+        for f in glob.glob(os.path.join(d, "*涌益咨询日度数据.xlsx")):
+            base = os.path.basename(f)
+            if base.startswith("~$"):
+                continue
+            m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", base)
+            if m:
+                dd = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+                if base not in seen:
+                    seen.add(base)
+                    dated.append((dd, f))
     dated.sort(key=lambda x: x[0])
     return dated
 
