@@ -30,11 +30,12 @@ BLUE = dict(
     red="#dc2626", blue="#2563eb", amber="#d97706",
 )
 
-# 同比图年份配色（任务指定，价差日报去除 2021）
+# 同比图年份配色（价差日报去除 2021；农历视图可能出现农历2021年）
 YEAR_COLORS = {
-    2022: "#7c3aed",  # 紫
-    2023: "#2563eb",  # 蓝
-    2024: "#000000",  # 黑
+    2021: "#eab308",  # 黄（农历2021年，来自公历2022年1月）
+    2022: "#a78bfa",  # 浅紫
+    2023: "#60a5fa",  # 浅蓝
+    2024: "#9ca3af",  # 浅灰（浅黑）
     2025: "#0e9f6e",  # 绿
     2026: "#dc2626",  # 红
 }
@@ -171,7 +172,7 @@ def load_provinces(path):
             d = df.loc[idx, "日期"]
             ld = LunarDate.fromSolarDate(d.year, d.month, d.day)
             week = d.isocalendar()[1]
-            pts.append([d.year, d.month, d.day, ld.month, ld.day, week,
+            pts.append([d.year, d.month, d.day, ld.year, ld.month, ld.day, week,
                         round(float(v), 4), d.strftime("%Y-%m-%d")])
 
         province_data.append({
@@ -247,8 +248,7 @@ table.quote td:first-child{font-weight:600;color:#111827;}
 
 # ============ 价差日报（任务二，JS 驱动） ============
 _PRICE_JS = r"""
-const YEAR_COLORS = {2022:"#7c3aed",2023:"#2563eb",2024:"#000000",2025:"#0e9f6e",2026:"#dc2626"};
-const YEAR_ORDER = [2022,2023,2024,2025,2026];
+const YEAR_COLORS = {2021:"#eab308",2022:"#a78bfa",2023:"#60a5fa",2024:"#9ca3af",2025:"#0e9f6e",2026:"#dc2626"};
 const PRICE = __PRICE_DATA__;
 let freq='daily', cal='solar';
 
@@ -262,14 +262,15 @@ function selectedDate(){return document.getElementById('dateSel').value;}
 function aggregate(points, freq, cal, cutoff){
   const groups={};
   points.forEach(function(p){
-    const y=p[0], sm=p[1], sd=p[2], lm=p[3], ld=p[4], w=p[5], s=p[6], d=p[7];
+    const syear=p[0], sm=p[1], sd=p[2], lyear=p[3], lm=p[4], ld=p[5], w=p[6], s=p[7], d=p[8];
     if(s==null) return;
     if(cutoff && d>cutoff) return;
+    const year=(cal==='solar')?syear:lyear;
     let key;
-    if(freq==='daily') key=y+'-'+d;
-    else if(freq==='weekly') key=y+'-W'+w;
-    else key=y+'-'+sm;
-    if(!groups[key]) groups[key]={y:y,sum:0,n:0,sm:sm,sd:sd,lm:lm,ld:ld,d:d};
+    if(freq==='daily') key=year+'-'+d;
+    else if(freq==='weekly') key=year+'-W'+w;
+    else key=year+'-M'+((cal==='solar')?sm:lm);
+    if(!groups[key]) groups[key]={year:year,sum:0,n:0,sm:sm,sd:sd,lm:lm,ld:ld,d:d};
     const g=groups[key];
     g.sum+=s; g.n+=1;
     if(d<g.d){g.sm=sm;g.sd=sd;g.lm=lm;g.ld=ld;g.d=d;}
@@ -281,8 +282,8 @@ function aggregate(points, freq, cal, cutoff){
     let x;
     if(freq==='monthly') x=(cal==='solar'?(g.sm-1)*31+1:(g.lm-1)*31+1);
     else x=(cal==='solar'?(g.sm-1)*31+g.sd:(g.lm-1)*31+g.ld);
-    if(!byYear[g.y]) byYear[g.y]=[];
-    byYear[g.y].push({x:x,y:+val.toFixed(4),d:g.d});
+    if(!byYear[g.year]) byYear[g.year]=[];
+    byYear[g.year].push({x:x,y:+val.toFixed(4),d:g.d});
   });
   Object.keys(byYear).forEach(function(y){byYear[y].sort(function(a,b){return a.x-b.x;});});
   return byYear;
@@ -290,33 +291,41 @@ function aggregate(points, freq, cal, cutoff){
 
 function tracesFor(prov, cutoff){
   const byYear=aggregate(prov.points, freq, cal, cutoff);
+  const years=Object.keys(byYear).map(Number).sort(function(a,b){return a-b;});
   const traces=[];
-  YEAR_ORDER.forEach(function(y){
-    if(byYear[y]){
-      traces.push({
-        x:byYear[y].map(function(p){return p.x;}),
-        y:byYear[y].map(function(p){return p.y;}),
-        mode:'lines', name:y+'年',
-        line:{color:YEAR_COLORS[y], width:1.8},
-        customdata:byYear[y].map(function(p){return p.d;}),
-        hovertemplate:y+'年<br>公历 %{customdata}<br>价差 %{y:.2f} 元/kg<extra></extra>'
-      });
-    }
+  years.forEach(function(y){
+    traces.push({
+      x:byYear[y].map(function(p){return p.x;}),
+      y:byYear[y].map(function(p){return p.y;}),
+      mode:'lines', name:y+'年',
+      line:{color:YEAR_COLORS[y]||'#888888', width:1.9},
+      customdata:byYear[y].map(function(p){return p.d;}),
+      hovertemplate:y+'年<br>%{customdata}<br>价差 %{y:.2f} 元/kg<extra></extra>'
+    });
   });
   return traces;
 }
 
-function chartLayout(h){
+function paddedYRange(allY){
+  if(!allY.length) return undefined;
+  let mn=Math.min.apply(null,allY), mx=Math.max.apply(null,allY);
+  if(mn>0) mn=0;
+  if(mx<0) mx=0;
+  const span=(mx-mn)||1;
+  return [mn-span*0.15, mx+span*0.15];
+}
+
+function chartLayout(h, yrange){
   return {
     template:'plotly_white', paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff',
     font:{family:'Microsoft YaHei, PingFang SC, sans-serif', color:'#1f2937', size:11},
-    margin:{l:42,r:10,t:8,b:34}, height:h,
+    margin:{l:54,r:12,t:10,b:36}, height:h,
     hoverlabel:{font:{family:'Microsoft YaHei'}},
     showlegend:false,
-    xaxis:{tickvals:cal==='solar'?SOLAR_TICKS:SOLAR_TICKS,
-           ticktext:cal==='solar'?SOLAR_LABELS:LUNAR_LABELS,
+    xaxis:{tickvals:SOLAR_TICKS,
+           ticktext:(cal==='solar')?SOLAR_LABELS:LUNAR_LABELS,
            range:[1,372], showgrid:false, zeroline:false},
-    yaxis:{gridcolor:'#eef2f7', zeroline:false},
+    yaxis:{gridcolor:'#eef2f7', zeroline:false, range:yrange, title:'价差(元/kg)'},
     shapes:[{type:'line',x0:1,x1:372,y0:0,y1:0,line:{color:'#cbd5e1',width:1,dash:'dash'}}]
   };
 }
@@ -324,9 +333,9 @@ function chartLayout(h){
 function latestOf(prov, cutoff){
   let v=null, d='';
   prov.points.forEach(function(p){
-    if(p[6]==null) return;
-    if(cutoff && p[7]>cutoff) return;
-    v=p[6]; d=p[7];
+    if(p[7]==null) return;
+    if(cutoff && p[8]>cutoff) return;
+    v=p[7]; d=p[8];
   });
   return {v:v,d:d};
 }
@@ -336,7 +345,10 @@ function render(){
   PRICE.provinces.forEach(function(prov, i){
     const lv=latestOf(prov, cutoff);
     document.getElementById('latest_'+i).textContent=(lv.v==null)?'—':lv.v.toFixed(4);
-    Plotly.react('chart_'+i, tracesFor(prov, cutoff), chartLayout(260), {responsive:true});
+    const traces=tracesFor(prov, cutoff);
+    const allY=[];
+    traces.forEach(function(t){allY.push.apply(allY, t.y);});
+    Plotly.react('chart_'+i, traces, chartLayout(300, paddedYRange(allY)), {responsive:true});
   });
 }
 
@@ -378,7 +390,7 @@ def build_price_report_html(province_data, latest_date):
     all_dates = set()
     for p in province_data:
         for pt in p["points"]:
-            all_dates.add(pt[7])
+            all_dates.add(pt[8])
     dates = sorted(all_dates)
 
     payload = {
@@ -446,7 +458,7 @@ def build_price_report_html(province_data, latest_date):
 
 # ============ 云南价格日报（任务一，JS 驱动） ============
 _YUNNAN_JS = r"""
-const YEAR_COLORS = {2022:"#7c3aed",2023:"#2563eb",2024:"#000000",2025:"#0e9f6e",2026:"#dc2626"};
+const YEAR_COLORS = {2021:"#eab308",2022:"#a78bfa",2023:"#60a5fa",2024:"#9ca3af",2025:"#0e9f6e",2026:"#dc2626"};
 const YN_YEARS = [2023,2024,2025,2026];
 const YN = __YN_DATA__;
 
@@ -498,8 +510,18 @@ const LAYOUT_BASE={template:'plotly_white',paper_bgcolor:'#ffffff',plot_bgcolor:
 
 function absLayout(t){return Object.assign({},LAYOUT_BASE,{title:{text:t,font:{size:14}},height:370,legend:{orientation:'h',y:1.08,x:0},
   xaxis:{showgrid:false,tickformat:'%Y年%m月'},yaxis:{gridcolor:'#eef2f7',title:'元/kg'}});}
-function seasonLayout(t){return Object.assign({},LAYOUT_BASE,{title:{text:t,font:{size:14}},height:320,legend:{orientation:'h',y:1.08,x:0},
-  xaxis:{tickvals:SOLAR_TICKS,ticktext:SOLAR_LABELS,range:[1,372],showgrid:false},yaxis:{gridcolor:'#eef2f7',title:'价差(元/kg)'}});}
+function paddedRange(arr){
+  const ys=arr.filter(function(v){return v!=null;});
+  if(!ys.length) return undefined;
+  let mn=Math.min.apply(null,ys), mx=Math.max.apply(null,ys);
+  if(mn>0) mn=0;
+  if(mx<0) mx=0;
+  const span=(mx-mn)||1;
+  return [mn-span*0.18, mx+span*0.18];
+}
+function seasonLayout(t,yrange){return Object.assign({},LAYOUT_BASE,{title:{text:t,font:{size:14}},height:320,legend:{orientation:'h',y:1.08,x:0},
+  xaxis:{tickvals:SOLAR_TICKS,ticktext:SOLAR_LABELS,range:[1,372],showgrid:false},
+  yaxis:{gridcolor:'#eef2f7',title:'价差(元/kg)',range:yrange,zeroline:true,zerolinecolor:'#cbd5e1',zerolinewidth:1}});}
 
 function render(){
   const sel=document.getElementById('dateSel');
@@ -522,8 +544,13 @@ function render(){
   ];
   Plotly.react('chart1',tr1,absLayout('云南散户标猪 / 150kg / 175kg 价格走势'),{responsive:true});
 
-  Plotly.react('chart2',seasonalTraces(s.dates,s.s150,YN_YEARS),seasonLayout('150kg 猪与标猪价差 · 季节性（同比）'),{responsive:true});
-  Plotly.react('chart3',seasonalTraces(s.dates,s.s175,YN_YEARS),seasonLayout('175kg 猪与标猪价差 · 季节性（同比）'),{responsive:true});
+  const tr2=seasonalTraces(s.dates,s.s150,YN_YEARS);
+  const y2=[]; tr2.forEach(function(t){y2.push.apply(y2,t.y);});
+  Plotly.react('chart2',tr2,seasonLayout('150kg 猪与标猪价差 · 季节性（同比）',paddedRange(y2)),{responsive:true});
+
+  const tr3=seasonalTraces(s.dates,s.s175,YN_YEARS);
+  const y3=[]; tr3.forEach(function(t){y3.push.apply(y3,t.y);});
+  Plotly.react('chart3',tr3,seasonLayout('175kg 猪与标猪价差 · 季节性（同比）',paddedRange(y3)),{responsive:true});
 }
 
 function parseQuotes(txt){
@@ -555,6 +582,9 @@ function toggleEdit(){
   const w=document.getElementById('editWrap');
   w.style.display=(w.style.display==='none')?'block':'none';
 }
+function updatePriceDate(){
+  document.getElementById('priceDateLabel').textContent=document.getElementById('priceDateSel').value;
+}
 
 function init(){
   const sel=document.getElementById('dateSel');
@@ -564,6 +594,15 @@ function init(){
     sel.appendChild(o);
   }
   sel.value=YN.dates[YN.dates.length-1];
+
+  const ps=document.getElementById('priceDateSel');
+  for(let i=YN.dates.length-1;i>=0;i--){
+    const o=document.createElement('option');
+    o.value=YN.dates[i];o.textContent=YN.dates[i];
+    ps.appendChild(o);
+  }
+  ps.value=YN.dates[YN.dates.length-1];
+  updatePriceDate();
   updateQuotes();
   render();
 }
@@ -591,7 +630,7 @@ def build_yunnan_report_html(yunnan, latest_date):
   <div class="ctrl"><label>数据日期</label><select id="dateSel" onchange="render()"></select></div>
 </div>
 <h1 class="title">云南价格日报</h1>
-<div class="sub">数据截止 {latest_date} ｜ 企业报价 + 云南散户标猪 / 150kg / 175kg 价格与肥标价差</div>
+<div class="sub">企业报价 + 云南散户标猪 / 150kg / 175kg 价格与肥标价差</div>
 
 <div class="section">
   <div class="section-title">企业报价</div>
@@ -600,8 +639,10 @@ def build_yunnan_report_html(yunnan, latest_date):
       <thead><tr><th style="width:34%;">企业</th><th style="width:32%;">毛猪体重段</th><th>报价（元/kg）</th></tr></thead>
       <tbody id="quoteTableBody"></tbody>
     </table>
+    <div style="margin-top:12px;font-size:14px;color:#1f2937;">报价日期：<b id="priceDateLabel">—</b></div>
     <button class="btn ghost" onclick="toggleEdit()">编辑报价</button>
     <div class="edit-wrap" id="editWrap" style="display:none;">
+      <div class="ctrl" style="margin-bottom:10px;"><label>价格日期</label><select id="priceDateSel" onchange="updatePriceDate()"></select></div>
       <textarea id="quoteTxt">{_DEFAULT_QUOTES}</textarea>
       <button class="btn" onclick="updateQuotes()">更新</button>
     </div>
