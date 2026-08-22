@@ -3887,7 +3887,8 @@ return Plotly;
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:"Microsoft YaHei","PingFang SC",-apple-system,sans-serif;background:#f4f6f9;color:#1f2937;line-height:1.55;}
-.page{max-width:1800px;margin:0 auto;padding:28px 30px 52px;}
+.page{max-width:1440px;margin:0 auto;padding:24px 16px 52px;}
+.page-wide{max-width:1900px;}
 .title{font-size:24px;font-weight:800;color:#1f2937;letter-spacing:.5px;padding:0 18px;}
 .sub{color:#64748b;font-size:13px;margin-top:6px;padding:0 18px;}
 .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px;padding:0 18px;}
@@ -3900,7 +3901,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",-apple-system,sans-serif;backgr
 .section{margin-top:26px;}
 .section-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:9px;margin-bottom:14px;color:#111827;padding:0 18px;}
 .section-title::before{content:"";width:5px;height:20px;background:#2563eb;border-radius:3px;}
-.card{background:#fff;border:1px solid #e5e9f0;border-radius:14px;padding:18px;box-shadow:0 1px 4px rgba(15,23,42,.05);}
+.card{background:#fff;border:1px solid #e5e9f0;border-radius:14px;padding:10px;box-shadow:0 1px 4px rgba(15,23,42,.05);}
 .kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
 .kpi{background:#fff;border:1px solid #e5e9f0;border-radius:12px;padding:12px 18px;min-width:118px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
 .kpi span{display:block;color:#64748b;font-size:12px;margin-bottom:5px;}
@@ -3919,7 +3920,7 @@ table.quote td:first-child{font-weight:600;color:#111827;}
 .edit-wrap{margin-top:14px;}
 .edit-wrap textarea{width:100%;min-height:150px;background:#f8fafc;color:#1f2937;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-family:Consolas,"Microsoft YaHei",monospace;font-size:14px;line-height:1.9;resize:vertical;}
 .chart{margin-top:14px;}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
 .cell h3{font-size:14px;margin-bottom:6px;}
 .cell .info{font-size:12px;color:#64748b;margin-bottom:6px;}
 .cell .info b{color:#111827;}
@@ -3930,7 +3931,7 @@ table.quote td:first-child{font-weight:600;color:#111827;}
 @media(max-width:640px){.grid3{grid-template-columns:1fr;}}
 </style>
 </head><body>
-<div class="page">
+<div class="page page-wide">
 <div class="controls">
   <div class="ctrl"><label>数据日期</label><select id="dateSel" onchange="render()"></select></div>
   <div class="ctrl"><label>频率</label><div class="seg" id="freqSeg">
@@ -4075,13 +4076,13 @@ function chartLayout(h, yrange){
   return {
     template:'plotly_white', paper_bgcolor:'#ffffff', plot_bgcolor:'#ffffff',
     font:{family:'Microsoft YaHei, PingFang SC, sans-serif', color:'#1f2937', size:11},
-    margin:{l:54,r:12,t:10,b:36}, height:h,
+    margin:{l:32,r:4,t:6,b:28}, height:h,
     hoverlabel:{font:{family:'Microsoft YaHei'}},
     showlegend:false,
     xaxis:{tickvals:SOLAR_TICKS,
            ticktext:(cal==='solar')?SOLAR_LABELS:LUNAR_LABELS,
            range:[1,372], showgrid:false, zeroline:false},
-    yaxis:{gridcolor:'#eef2f7', zeroline:false, range:yrange, title:'价差(元/kg)'},
+    yaxis:{gridcolor:'#eef2f7', zeroline:false, range:yrange, title:null},
     shapes:[{type:'line',x0:1,x1:372,y0:0,y1:0,line:{color:'#cbd5e1',width:1,dash:'dash'}}]
   };
 }
