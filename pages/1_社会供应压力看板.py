@@ -44,8 +44,12 @@ def _build(path, mtime, cal, gran, end, rng, detail, theme):
                     range_days=rng, detail=detail, theme=theme)
 
 
-path = sd.find_source()
-data = _load(path, os.path.getmtime(path))
+try:
+    path = sd.find_source()
+    data = _load(path, os.path.getmtime(path))
+except FileNotFoundError as e:
+    st.error(f'{e}\n\n桌面跑一次「更新看板数据.bat」再同步到 GitHub 即可。')
+    st.stop()
 meta = data['meta']
 dmin, dmax = dt.date.fromisoformat(meta['date_min']), dt.date.fromisoformat(meta['date_max'])
 
