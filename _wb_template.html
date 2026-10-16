@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="zh-CN"__WB_HTMLATTR__>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>社会供应压力看板 · 云南神农肉业</title>
+<style>
+:root{
+  --plane:#f9f9f7; --surface:#fcfcfb;
+  --ink-1:#0b0b0b; --ink-2:#52514e; --ink-3:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --hair:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#eb6834;
+  --y25:#0f8f45; --y26:#d2352f;   /* 季节同比: 2025 绿 / 2026 红 */
+  --ord1:#86b6ef; --ord2:#5598e7; --ord3:#2a78d6; --ord4:#1c5cab; --ord5:#0d366b;
+  --st-good:#0ca30c; --st-warn:#fab219; --st-serious:#ec835a; --st-crit:#d03b3b;
+  --up-good:#006300;
+  --shadow:0 1px 2px rgba(11,11,11,.04),0 4px 16px rgba(11,11,11,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])){
+    --plane:#0d0d0d; --surface:#1a1a19;
+    --ink-1:#fff; --ink-2:#c3c2b7; --ink-3:#898781;
+    --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926;
+    --y25:#35c46e; --y26:#ef5b52;
+    --ord1:#cde2fb; --ord2:#9ec5f4; --ord3:#6da7ec; --ord4:#3987e5; --ord5:#184f95;
+    --up-good:#0ca30c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --plane:#0d0d0d; --surface:#1a1a19;
+  --ink-1:#fff; --ink-2:#c3c2b7; --ink-3:#898781;
+  --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
+  --s1:#3987e5; --s2:#d95926;
+  --y25:#35c46e; --y26:#ef5b52;
+  --ord1:#cde2fb; --ord2:#9ec5f4; --ord3:#6da7ec; --ord4:#3987e5; --ord5:#184f95;
+  --up-good:#0ca30c;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--plane); color:var(--ink-1);
+  font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1440px;margin:0 auto;padding:24px 20px 80px}
+
+/* ---------- header ---------- */
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:20px}
+h1{font-size:22px;font-weight:650;margin:0;letter-spacing:-.01em}
+.sub{color:var(--ink-3);font-size:13px;margin-top:3px;font-variant-numeric:tabular-nums}
+.spacer{flex:1}
+.themebtn{
+  background:var(--surface);border:1px solid var(--hair);color:var(--ink-2);
+  border-radius:8px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;
+}
+.themebtn:hover{border-color:var(--axis)}
+
+/* ---------- filter row (one row, scopes everything below) ---------- */
+.filters{
+  display:flex;flex-wrap:wrap;gap:20px;align-items:center;
+  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
+  padding:12px 16px;margin-bottom:18px;box-shadow:var(--shadow);
+  position:sticky;top:0;z-index:20;
+}
+.fgroup{display:flex;align-items:center;gap:8px}
+.flabel{color:var(--ink-3);font-size:12px;font-weight:550;letter-spacing:.02em}
+.seg{display:flex;background:var(--plane);border:1px solid var(--hair);border-radius:8px;padding:2px}
+.seg button{
+  background:transparent;border:0;color:var(--ink-2);font:inherit;font-size:13px;
+  padding:4px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;
+}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink-1);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg button:hover:not([aria-pressed="true"]){color:var(--ink-1)}
+/* 日期选择器: 原生控件在深色主题下要跟着变深, 否则图标看不见 */
+.dtin{
+  background:var(--plane);border:1px solid var(--hair);color:var(--ink-1);
+  border-radius:8px;padding:4px 8px;font:inherit;font-size:13px;
+  font-variant-numeric:tabular-nums;color-scheme:light;
+}
+:root[data-theme="dark"] .dtin{color-scheme:dark;border-color:var(--axis)}
+@media (prefers-color-scheme:dark){
+  :root:where(:not([data-theme="light"])) .dtin{color-scheme:dark;border-color:var(--axis)}
+}
+.minibtn{
+  background:var(--plane);border:1px solid var(--hair);color:var(--ink-2);
+  border-radius:8px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;
+}
+.minibtn:hover{color:var(--ink-1);border-color:var(--axis)}
+/* 嵌进 Streamlit 之类的外壳时, 筛选控件由外壳提供 —— 藏掉内嵌那一排, 只留当前视图提示 */
+body.embed .fgroup{display:none}
+body.embed .filters{padding:8px 14px;margin-bottom:14px}
+body.embed .filters .spacer{display:none}
+body.embed .top{display:none}   /* 标题外壳那边已经有了, 别占一屏 */
+body.embed .wrap{padding-top:8px}
+.det.hide{display:none}
+
+/* ---------- alert banner ---------- */
+.banner{
+  display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+  border-radius:12px;padding:14px 18px;margin-bottom:18px;
+  border:1px solid var(--hair);background:var(--surface);box-shadow:var(--shadow);
+}
+.lamp{width:14px;height:14px;border-radius:50%;flex:none}
+.lamp.good{background:var(--st-good)} .lamp.warn{background:var(--st-warn)}
+.lamp.serious{background:var(--st-serious)} .lamp.crit{background:var(--st-crit)}
+.banner .headline{font-size:15px;font-weight:650}
+.banner .detail{color:var(--ink-2);font-size:13px}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  border-radius:999px;padding:3px 10px;border:1px solid var(--hair);color:var(--ink-2);
+}
+.badge .lamp{width:9px;height:9px}
+
+/* ---------- grid + cards ---------- */
+.grid{display:grid;gap:14px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(196px,1fr));margin-bottom:18px}
+.card{
+  background:var(--surface);border:1px solid var(--hair);border-radius:12px;
+  padding:16px 18px;box-shadow:var(--shadow);
+}
+.card h2{font-size:14px;font-weight:650;margin:0 0 2px}
+.card .note{color:var(--ink-3);font-size:12px;margin:0 0 10px}
+.sec-title{font-size:15px;font-weight:650;margin:26px 0 10px;display:flex;align-items:center;gap:10px}
+.yoybar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 14px}
+.yoyhint{color:var(--ink-3);font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
+.sec-title::after{content:"";flex:1;height:1px;background:var(--grid)}
+
+/* ---------- stat tile ---------- */
+.tile{display:flex;flex-direction:column;gap:2px}
+.tile .k{color:var(--ink-3);font-size:12px;font-weight:550}
+.tile .v{font-size:28px;font-weight:650;letter-spacing:-.02em;line-height:1.15}
+.tile .v .u{font-size:14px;font-weight:500;color:var(--ink-3);margin-left:3px;letter-spacing:0}
+.tile .d{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.tile .d .up{color:var(--up-good)} .tile .d .dn{color:var(--st-crit)}
+.tile .sp{margin-top:4px;height:26px}
+
+/* ---------- chart card ---------- */
+/* 固定 2 轨, 不用 auto-fit —— auto-fit 下"只有 1 张卡"时它会占满整行,
+   等第 2 张插进来再被挤成半宽, 而先画的那张 SVG 已经按整行宽度定了 viewBox,
+   于是被等比压扁。固定轨数后每张卡的宽度与卡片数量无关。窄屏见下方媒体查询。 */
+.charts2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.charts1{grid-template-columns:1fr}
+.chead{display:flex;align-items:flex-start;gap:10px;margin-bottom:2px}
+.chead h2{flex:1}
+.tbtn{
+  background:transparent;border:1px solid var(--hair);color:var(--ink-3);
+  border-radius:6px;padding:2px 8px;font:inherit;font-size:11px;cursor:pointer;flex:none;
+}
+.tbtn:hover{color:var(--ink-1);border-color:var(--axis)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 2px}
+.legend .li{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+.legend .sw{width:12px;height:12px;border-radius:3px;flex:none}
+.legend .sw.line{height:3px;border-radius:2px}
+svg.chart{display:block;width:100%;overflow:visible}
+.tt{
+  position:fixed;pointer-events:none;z-index:60;opacity:0;transition:opacity .1s;
+  background:var(--surface);border:1px solid var(--hair);border-radius:8px;
+  padding:8px 10px;font-size:12px;color:var(--ink-1);box-shadow:var(--shadow);
+  font-variant-numeric:tabular-nums;max-width:260px;
+}
+.tt .tth{font-weight:650;margin-bottom:5px;font-size:12px}
+.tt .ttr{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.tt .ttr .sw{width:9px;height:9px;border-radius:2px;flex:none}
+.tt .ttr .nm{color:var(--ink-2);flex:1}
+.tt .ttr .vl{font-weight:600;margin-left:8px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th{color:var(--ink-3);font-weight:600;font-size:11.5px;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--surface)}
+th:hover{color:var(--ink-1)}
+th.l,td.l{text-align:left}
+tbody tr:hover{background:color-mix(in srgb,var(--ink-1) 4%,transparent)}
+.tblwrap{max-height:400px;overflow:auto;margin-top:8px;border:1px solid var(--hair);border-radius:8px}
+.hide{display:none}
+.audit{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 22px;font-size:12.5px}
+.audit div{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--grid)}
+.audit .n{color:var(--ink-2);font-variant-numeric:tabular-nums}
+.audit .n.warn{color:var(--st-crit);font-weight:600}
+.rules{width:100%;font-size:12.5px}
+.rules td,.rules th{text-align:left}
+.rules .st{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.pilln{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:12px}
+@media(max-width:1040px){.charts2{grid-template-columns:1fr}}
+@media(max-width:640px){
+  .wrap{padding:16px 12px 60px}
+  .filters{position:static}
+}
+</style>
+</head>
+<body__WB_BODYATTR__>
+<div class="wrap">
+
+<header class="top">
+  <div>
+    <h1>社会供应压力看板</h1>
+    <div class="sub" id="subtitle"></div>
+  </div>
+  <div class="spacer"></div>
+  <button class="themebtn" id="themeBtn">切换深/浅色</button>
+</header>
+
+<div class="filters">
+  <div class="fgroup">
+    <span class="flabel">历法</span>
+    <div class="seg" id="segCal">
+      <button data-c="公历" aria-pressed="true">公历</button>
+      <button data-c="农历" aria-pressed="false">农历</button>
+    </div>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">粒度</span>
+    <div class="seg" id="segGran">
+      <button data-g="日" aria-pressed="true">日</button>
+      <button data-g="周" aria-pressed="false">周</button>
+      <button data-g="月" aria-pressed="false">月</button>
+    </div>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">截止</span>
+    <input type="date" class="dtin" id="dtEnd">
+    <button class="minibtn" id="btnLatest">最新</button>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">区间</span>
+    <div class="seg" id="segRange">
+      <button data-r="30" aria-pressed="false">近 30</button>
+      <button data-r="90" aria-pressed="false">近 90</button>
+      <button data-r="365" aria-pressed="false">近一年</button>
+      <button data-r="0" aria-pressed="true">全部</button>
+    </div>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">明细</span>
+    <div class="seg" id="segDetail">
+      <button data-d="0" aria-pressed="false">隐藏</button>
+      <button data-d="1" aria-pressed="true">显示</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="grouphint" id="scopeHint" style="color:var(--ink-3);font-size:12px"></div>
+</div>
+
+<div class="banner" id="banner"></div>
+
+<div class="grid kpis" id="kpis"></div>
+
+<div class="card" id="signalCard" style="margin-bottom:18px"></div>
+
+<div class="sec-title">趋势 · 小倍数</div>
+<div class="grid charts2" id="trends"></div>
+
+<div class="sec-title">季节同比 · 2025 vs 2026</div>
+<div class="yoybar">
+  <span class="flabel">对齐</span>
+  <span class="grouphint" id="yoyAlignHint" style="color:var(--ink-3);font-size:12px"></span>
+  <span class="flabel">平滑</span>
+  <span class="seg" id="segYoySmooth">
+    <button data-s="7" aria-pressed="true">7 日均值</button>
+    <button data-s="1" aria-pressed="false">原始日值</button>
+  </span>
+  <span class="yoyhint" id="yoyHint"></span>
+</div>
+<div class="grid charts2" id="yoy"></div>
+
+<div class="sec-title">结构 · 体重段与群体</div>
+<div class="grid charts1" id="structure" style="margin-bottom:14px"></div>
+<div class="grid charts2" id="structure2"></div>
+
+<div class="sec-title">口径警示 · "散户"与"大猪"高度共线</div>
+<div class="grid charts2" id="diag"></div>
+
+<section class="det" id="secBin">
+<div class="sec-title">体重段明细 · 全量 / 分群体</div>
+<div class="grid charts1" id="binDetail"></div>
+</section>
+
+<div class="sec-title">外调大猪</div>
+<div class="grid charts1" id="extCharts" style="margin-bottom:14px"></div>
+<section class="det" id="secExtTable">
+<div class="card" id="extTable"></div>
+</section>
+
+<div class="sec-title">预警规则与判定</div>
+<div class="card" id="rulesCard"></div>
+
+<section class="det" id="secAudit">
+<div class="sec-title">数据与清洗审计</div>
+<div class="card" id="auditCard"></div>
+</section>
+
+</div>
+<div class="tt" id="tt"></div>
+
+<script>
+/* __WB_STATE__ 由构建器替换: null = 全部走默认(最新日期 / 公历 / 日 / 显示明细)。
+   Streamlit 外壳传 {cal, gran, endDate, range, detail, embed} —— embed=true 时
+   藏掉内嵌的筛选条, 并且把自身高度回传给外壳, 免得 iframe 里出现第二条滚动条。 */
+const WB_STATE = __WB_STATE__;
+const DATA = __WB_DATA__;
+</script>
+<script>
+/* ============================================================
+   微型 SVG 图表库 —— 严格按 mark spec:
+   柱宽<=24px / 数据端 4px 圆角 / 线 2px round / 标记 r>=4 + 2px surface ring
+   堆叠段间 2px surface gap / 网格 1px 实线 hairline
+   ============================================================ */
+const NS='http://www.w3.org/2000/svg';
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=n=>n==null?'—':n.toLocaleString('zh-CN');
+const fmt1=n=>n==null?'—':n.toLocaleString('zh-CN',{minimumFractionDigits:1,maximumFractionDigits:1});
+const fmt2=n=>n==null?'—':n.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function mk(tag,attrs,parent){
+  const e=document.createElementNS(NS,tag);
+  for(const k in attrs) if(attrs[k]!=null) e.setAttribute(k,attrs[k]);
+  if(parent) parent.appendChild(e);
+  return e;
+}
+function niceTicks(lo,hi,n){
+  if(lo===hi){lo-=1;hi+=1;}
+  const raw=(hi-lo)/n, mag=Math.pow(10,Math.floor(Math.log10(raw))), norm=raw/mag;
+  const step=(norm<=1?1:norm<=2?2:norm<=2.5?2.5:norm<=5?5:10)*mag;
+  const out=[]; for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10));
+  return out;
+}
+function niceNum(v){
+  const a=Math.abs(v);
+  if(a>=1e8) return (v/1e8).toFixed(2)+'亿';
+  if(a>=1e4) return (v/1e4).toFixed(a>=1e6?1:2)+'万';
+  if(a>=1e3) return v.toLocaleString('zh-CN',{maximumFractionDigits:0});
+  return String(+v.toFixed(2));
+}
+
+/* 轴标签压缩: 日 25-01-01 / 周 25W03 / 月 25-01 / 农历月 25·正 */
+function shortLab(p){
+  if(p.indexOf('~')>0) return shortLab(p.split('~')[0])+'…';   // 合并桶: 只取起始期
+  if(/^\d{4}-\d{2}-\d{2}$/.test(p)) return p.slice(2);
+  if(/^\d{4}-W\d{2}$/.test(p)) return p.slice(2).replace('-W','W');
+  if(/^\d{4}-\d{2}$/.test(p)) return p.slice(2);
+  if(/^\d{4}年/.test(p)) return p.slice(2,4)+'·'+p.replace(/^\d{4}年(闰)?/,'').replace('月','');
+  return p;
+}
+/* 按可用宽度决定刻度个数 */
+function tickStep(iw,n,sample){
+  const px=Math.max(30,sample.length*7.2);
+  const maxT=Math.max(2,Math.floor(iw/(px+16)));
+  return Math.max(1,Math.ceil(n/maxT));
+}
+
+const chartRegistry=[];
+function registerChart(fn){ chartRegistry.push(fn); }
+function redrawAll(){ chartRegistry.forEach(f=>f()); }
+let rAF=null;
+window.addEventListener('resize',()=>{ cancelAnimationFrame(rAF); rAF=requestAnimationFrame(redrawAll); });
+
+/* ---------- tooltip ---------- */
+const TT=document.getElementById('tt');
+function showTT(html,x,y){
+  TT.innerHTML=html; TT.style.opacity='1';
+  const r=TT.getBoundingClientRect();
+  let nx=x+14, ny=y-r.height-10;
+  if(nx+r.width>innerWidth-8) nx=x-r.width-14;
+  if(ny<8) ny=y+16;
+  TT.style.left=nx+'px'; TT.style.top=ny+'px';
+}
+function hideTT(){ TT.style.opacity='0'; }
+
+/* ---------- 卡片骨架 ---------- */
+function card(host,{title,note,tableId}){
+  const c=document.createElement('div'); c.className='card';
+  const h=document.createElement('div'); h.className='chead';
+  const t=document.createElement('h2'); t.textContent=title; h.appendChild(t);
+  if(tableId){
+    const b=document.createElement('button'); b.className='tbtn'; b.textContent='表格';
+    b.setAttribute('aria-pressed','false');
+    b.onclick=()=>{
+      const on=b.getAttribute('aria-pressed')==='false';
+      b.setAttribute('aria-pressed',String(on)); b.textContent=on?'图表':'表格';
+      c.querySelector('.plotwrap').classList.toggle('hide',on);
+      c.querySelector('#'+tableId).classList.toggle('hide',!on);
+    };
+    h.appendChild(b);
+  }
+  c.appendChild(h);
+  if(note){const n=document.createElement('p');n.className='note';n.textContent=note;c.appendChild(n);}
+  const pw=document.createElement('div'); pw.className='plotwrap'; c.appendChild(pw);
+  if(tableId){const tw=document.createElement('div');tw.className='tblwrap hide';tw.id=tableId;c.appendChild(tw);}
+  host.appendChild(c);
+  return {card:c,plot:pw,tableWrap:tableId?c.querySelector('#'+tableId):null};
+}
+
+/* ---------- 单序列 / 多序列折线 ---------- */
+function lineChart(host,opt){
+  const {series,labels,yLabel='',pct=false,area=false,h=200,tableId=null,
+         note='',title='',directEnd=true,yZero=false,
+         tickAt=null,tipLabels=null}=opt;
+  const tips=tipLabels||labels;
+  const {plot,tableWrap}=card(host,{title,note,tableId});
+  let svg=null;
+  function draw(){
+    const W=plot.clientWidth||640, H=h, m={t:14,r:directEnd?86:44,b:26,l:52};
+    const iw=Math.max(40,W-m.l-m.r), ih=H-m.t-m.b;
+    const all=series.flatMap(s=>s.data).filter(v=>v!=null);
+    if(!all.length) return;
+    let lo=Math.min(...all), hi=Math.max(...all);
+    if(yZero) lo=Math.min(0,lo);
+    const pad=(hi-lo)*0.12||1; lo-=pad; hi+=pad;
+    if(pct) lo=Math.max(0,lo);
+    const ticks=niceTicks(lo,hi,4);
+    lo=Math.min(lo,ticks[0]); hi=Math.max(hi,ticks[ticks.length-1]);
+    const X=i=>m.l+(labels.length<2?iw/2:(i/(labels.length-1))*iw);
+    const Y=v=>m.t+ih-((v-lo)/(hi-lo))*ih;
+    if(svg) svg.remove();
+    svg=mk('svg',{class:'chart',viewBox:`0 0 ${W} ${H}`,height:H},plot);
+    // 网格 + y 轴刻度
+    ticks.forEach(t=>{
+      mk('line',{x1:m.l,x2:m.l+iw,y1:Y(t),y2:Y(t),stroke:cssv('--grid'),'stroke-width':1},svg);
+      const tx=mk('text',{x:m.l-9,y:Y(t)+4,'text-anchor':'end','font-size':11,fill:cssv('--ink-3')},svg);
+      tx.textContent=pct?t.toFixed(0)+'%':niceNum(t);
+    });
+    mk('line',{x1:m.l,x2:m.l+iw,y1:m.t+ih,y2:m.t+ih,stroke:cssv('--axis'),'stroke-width':1},svg);
+    // x 轴刻度 —— 给了 tickAt 就只在这些下标出标签(如每月 1 号), 否则按可用宽度等距取
+    const sLab=labels.map(shortLab);
+    let ticksAt;
+    if(tickAt){
+      ticksAt=tickAt.filter(i=>sLab[i]);
+    }else{
+      const step=tickStep(iw,labels.length,sLab.find(x=>x)||'');
+      ticksAt=[]; for(let i=0;i<labels.length;i+=step) ticksAt.push(i);
+    }
+    ticksAt.forEach(i=>{
+      const tx=mk('text',{x:X(i),y:m.t+ih+16,'text-anchor':'middle','font-size':11,
+        fill:cssv('--ink-3'),'font-variant-numeric':'tabular-nums'},svg);
+      tx.textContent=sLab[i];
+    });
+    // 面积 + 折线
+    if(area&&series.length===1){
+      const s=series[0], d=labels.map((_,i)=>s.data[i]==null?null:[X(i),Y(s.data[i])]).filter(Boolean);
+      if(d.length) mk('path',{d:`M${d[0][0]},${m.t+ih} `+d.map(p=>`L${p[0]},${p[1]}`).join(' ')+` L${d[d.length-1][0]},${m.t+ih} Z`,
+        fill:s.color,'fill-opacity':.10,stroke:'none'},svg);
+    }
+    const ends=[];
+    series.forEach(s=>{
+      const d=[]; let lastV=null;
+      labels.forEach((_,i)=>{ if(s.data[i]!=null){ d.push([X(i),Y(s.data[i])]); lastV=s.data[i]; } });
+      if(!d.length) return;
+      mk('path',{d:'M'+d.map(p=>`${p[0]},${p[1]}`).join(' L'),fill:'none',stroke:s.color,
+        'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round',
+        'stroke-dasharray':s.dash||null},svg);
+      // 末端直标取【最后一个非空点】——同比图里 2026 年中就断了, 不能取 data[末尾]
+      if(directEnd) ends.push({s,pt:d[d.length-1],v:lastV});
+    });
+    // 末端直标: 只在放得下时出; 碰撞时保留主序列(第一个), 其余交给图例+悬停
+    if(directEnd){
+      const sorted=ends.slice().sort((a,b)=>a.pt[1]-b.pt[1]);
+      let lastY=-1e9;
+      ends.forEach(e=>{ e.show=true; });
+      sorted.forEach(e=>{ if(e.pt[1]-lastY<13) e.show=false; else lastY=e.pt[1]; });
+      if(sorted.length) sorted[0].show=true;   // 最上方那个总是保留
+      ends.forEach(e=>{
+        mk('circle',{cx:e.pt[0],cy:e.pt[1],r:4,fill:e.s.color,stroke:cssv('--surface'),'stroke-width':2},svg);
+        if(!e.show) return;
+        const lab=mk('text',{x:e.pt[0]+9,y:e.pt[1]+4,'font-size':11.5,fill:cssv('--ink-2'),
+          'font-variant-numeric':'tabular-nums'},svg);
+        lab.textContent=pct?fmt1(e.v)+'%':fmt1(e.v);
+      });
+    }
+    // 图例(>=2 序列才出) —— 先清旧的，避免 resize 重绘时叠加
+    plot.parentElement.querySelectorAll(':scope > .legend').forEach(x=>x.remove());
+    if(series.length>=2){
+      const lg=document.createElement('div'); lg.className='legend';
+      series.forEach(s=>{ const d=document.createElement('div'); d.className='li';
+        const sw=document.createElement('span'); sw.className='sw line'; sw.style.background=s.color;
+        d.appendChild(sw); const t=document.createElement('span'); t.textContent=s.name; d.appendChild(t); lg.appendChild(d); });
+      plot.parentElement.insertBefore(lg,plot);
+    }
+    // crosshair
+    const cross=mk('line',{y1:m.t,y2:m.t+ih,stroke:cssv('--axis'),'stroke-width':1,opacity:0},svg);
+    const dots=series.map(s=>mk('circle',{r:4.5,fill:s.color,stroke:cssv('--surface'),'stroke-width':2,opacity:0},svg));
+    const hit=mk('rect',{x:m.l,y:m.t,width:iw,height:ih,fill:'transparent',style:'cursor:crosshair'},svg);
+    hit.addEventListener('mousemove',ev=>{
+      const bb=svg.getBoundingClientRect();
+      const px=(ev.clientX-bb.left)*(W/bb.width);
+      let i=Math.round(((px-m.l)/iw)*(labels.length-1));
+      i=Math.max(0,Math.min(labels.length-1,i));
+      const x=X(i); cross.setAttribute('x1',x); cross.setAttribute('x2',x); cross.setAttribute('opacity','1');
+      let html=`<div class="tth">${tips[i]}</div>`;
+      series.forEach((s,k)=>{
+        dots[k].setAttribute('cx',x); dots[k].setAttribute('cy',Y(s.data[i]??lo));
+        dots[k].setAttribute('opacity',s.data[i]==null?'0':'1');
+        if(s.data[i]!=null)
+          html+=`<div class="ttr"><span class="sw" style="background:${s.color}"></span><span class="nm">${s.name}</span><span class="vl">${pct?fmt2(s.data[i])+'%':fmt(s.data[i])}</span></div>`;
+      });
+      showTT(html,ev.clientX,ev.clientY);
+    });
+    hit.addEventListener('mouseleave',()=>{cross.setAttribute('opacity','0');dots.forEach(d=>d.setAttribute('opacity','0'));hideTT();});
+  }
+  draw(); registerChart(draw);
+  if(tableWrap) buildTable(tableWrap,opt.tableCols,opt.tableRows);
+  return {draw};
+}
+
+/* ---------- 堆叠柱 ---------- */
+function stackedColumn(host,opt){
+  const {labels,series,title,note,tableId=null,h=230,tableCols,tableRows,colors}=opt;
+  const {plot,tableWrap}=card(host,{title,note,tableId});
+  const legend=document.createElement('div'); legend.className='legend';
+  series.forEach((s,i)=>{ const d=document.createElement('div'); d.className='li';
+    const sw=document.createElement('span'); sw.className='sw'; sw.style.background=s.color;
+    d.appendChild(sw); const t=document.createElement('span');
+    t.textContent=s.name+(s.share!=null?'  '+fmt2(s.share)+'%':''); d.appendChild(t); legend.appendChild(d); });
+  plot.parentElement.insertBefore(legend,plot);
+  let svg=null;
+  function draw(){
+    const W=plot.clientWidth||900, H=h, m={t:14,r:16,b:26,l:56};
+    const iw=Math.max(40,W-m.l-m.r), ih=H-m.t-m.b;
+    const totals=labels.map((_,i)=>series.reduce((a,s)=>a+(s.data[i]||0),0));
+    const hi=Math.max(...totals)||1;
+    const ticks=niceTicks(0,hi,4), top=ticks[ticks.length-1];
+    const band=iw/labels.length, bw=Math.min(24,Math.max(2,band*0.68));
+    const X=i=>m.l+band*i+band/2;
+    const Y=v=>m.t+ih-(v/top)*ih;
+    if(svg) svg.remove();
+    svg=mk('svg',{class:'chart',viewBox:`0 0 ${W} ${H}`,height:H},plot);
+    ticks.forEach(t=>{
+      mk('line',{x1:m.l,x2:m.l+iw,y1:Y(t),y2:Y(t),stroke:cssv('--grid'),'stroke-width':1},svg);
+      const tx=mk('text',{x:m.l-9,y:Y(t)+4,'text-anchor':'end','font-size':11,fill:cssv('--ink-3')},svg);
+      tx.textContent=niceNum(t);
+    });
+    mk('line',{x1:m.l,x2:m.l+iw,y1:m.t+ih,y2:m.t+ih,stroke:cssv('--axis'),'stroke-width':1},svg);
+    const sLab=labels.map(shortLab);
+    const step=tickStep(iw,labels.length,sLab[0]||'');
+    for(let i=0;i<labels.length;i+=step){
+      const tx=mk('text',{x:X(i),y:m.t+ih+16,'text-anchor':'middle','font-size':11,
+        fill:cssv('--ink-3'),'font-variant-numeric':'tabular-nums'},svg);
+      tx.textContent=sLab[i];
+    }
+    const GAP=2;
+    labels.forEach((lb,i)=>{
+      let acc=0;
+      const stack=series.map(s=>({s,v:s.data[i]||0})).filter(o=>o.v>0);
+      stack.forEach((o,k)=>{
+        const y0=Y(acc+o.v), y1=Y(acc);
+        let hgt=Math.max(0,(y1-y0)-(k<stack.length-1?GAP:0));
+        if(hgt<=0.4) hgt=0.4;
+        const isTop=k===stack.length-1;
+        mk('rect',{x:X(i)-bw/2,y:y0,width:bw,height:hgt,fill:o.s.color,
+          rx:isTop?Math.min(4,bw/2):0,ry:isTop?Math.min(4,bw/2):0},svg);
+        acc+=o.v;
+      });
+    });
+    const hit=mk('rect',{x:m.l,y:m.t,width:iw,height:ih,fill:'transparent'},svg);
+    hit.addEventListener('mousemove',ev=>{
+      const bb=svg.getBoundingClientRect();
+      const px=(ev.clientX-bb.left)*(W/bb.width);
+      let i=Math.floor((px-m.l)/band); i=Math.max(0,Math.min(labels.length-1,i));
+      let html=`<div class="tth">${labels[i]}</div>`; let tot=0;
+      series.forEach(s=>{ tot+=s.data[i]||0; });
+      series.forEach(s=>{ const v=s.data[i]||0;
+        html+=`<div class="ttr"><span class="sw" style="background:${s.color}"></span><span class="nm">${s.name}</span><span class="vl">${fmt(v)}${tot?` · ${fmt2(v/tot*100)}%`:''}</span></div>`; });
+      html+=`<div class="ttr" style="border-top:1px solid var(--grid);margin-top:4px;padding-top:4px"><span class="nm">合计</span><span class="vl">${fmt(tot)}</span></div>`;
+      showTT(html,ev.clientX,ev.clientY);
+    });
+    hit.addEventListener('mouseleave',hideTT);
+  }
+  draw(); registerChart(draw);
+  if(tableWrap) buildTable(tableWrap,tableCols,tableRows);
+  return {draw};
+}
+
+/* ---------- 横向条 ---------- */
+function barChart(host,opt){
+  const {items,title,note,color,tableId=null,unit='',tableCols,tableRows}=opt;
+  const {plot,tableWrap}=card(host,{title,note,tableId});
+  let svg=null;
+  function draw(){
+    const rowH=26, W=plot.clientWidth||640, H=Math.max(60,items.length*rowH+30);
+    const m={t:6,r:96,b:6,l:132};
+    const iw=Math.max(30,W-m.l-m.r);
+    const hi=Math.max(...items.map(d=>d.v))||1;
+    if(svg) svg.remove();
+    svg=mk('svg',{class:'chart',viewBox:`0 0 ${W} ${H}`,height:H},plot);
+    items.forEach((d,i)=>{
+      const y=m.t+i*rowH, bh=Math.min(18,rowH-8);
+      const w=Math.max(1,(d.v/hi)*iw);
+      const nm=mk('text',{x:m.l-10,y:y+bh/2+4,'text-anchor':'end','font-size':11.5,fill:cssv('--ink-2')},svg);
+      nm.textContent=d.name;
+      mk('rect',{x:m.l,y:y+ (rowH-bh)/2,width:w,height:bh,fill:color,rx:4,ry:4},svg);
+      // 4px 圆角只在数据端 —— 覆盖起端为方角
+      mk('rect',{x:m.l,y:y+(rowH-bh)/2,width:Math.min(4,w),height:bh,fill:color},svg);
+      const vl=mk('text',{x:m.l+w+9,y:y+bh/2+4,'font-size':11.5,fill:cssv('--ink-2'),
+        'font-variant-numeric':'tabular-nums'},svg);
+      vl.textContent=fmt(d.v)+unit;
+    });
+    const hit=mk('rect',{x:0,y:0,width:W,height:H,fill:'transparent'},svg);
+    hit.addEventListener('mousemove',ev=>{
+      const bb=svg.getBoundingClientRect();
+      const py=(ev.clientY-bb.top)*(H/bb.height);
+      const i=Math.floor((py-m.t)/rowH);
+      if(i<0||i>=items.length) return hideTT();
+      const d=items[i];
+      const extra=opt.tipExtra?opt.tipExtra(d):'';
+      showTT(`<div class="tth">${d.name}</div><div class="ttr"><span class="nm">${opt.metric||'值'}</span><span class="vl">${fmt(d.v)}${unit}</span></div>${extra}`,ev.clientX,ev.clientY);
+    });
+    hit.addEventListener('mouseleave',hideTT);
+  }
+  draw(); registerChart(draw);
+  if(tableWrap) buildTable(tableWrap,tableCols,tableRows);
+  return {draw};
+}
+
+/* ---------- sparkline (12 点) ---------- */
+function sparkline(host,data,color){
+  const W=host.clientWidth||150, H=26, n=data.length;
+  if(n<2){return;}
+  const lo=Math.min(...data), hi=Math.max(...data), sp=(hi-lo)||1;
+  const X=i=>i/(n-1)*W, Y=v=>H-3-((v-lo)/sp)*(H-8);
+  const svg=mk('svg',{class:'chart',viewBox:`0 0 ${W} ${H}`,height:H},host);
+  mk('path',{d:'M'+data.map((v,i)=>`${X(i)},${Y(v)}`).join(' L'),fill:'none',
+    stroke:cssv('--axis'),'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'},svg);
+  const k=n-1;
+  mk('circle',{cx:X(k),cy:Y(data[k]),r:3.5,fill:color,stroke:cssv('--surface'),'stroke-width':2},svg);
+}
+
+/* ---------- 表格 ---------- */
+function buildTable(host,cols,rows){
+  if(!cols||!rows) return;
+  host.innerHTML='';
+  const t=document.createElement('table');
+  let sortK=null, sortDir=-1;
+  function render(){
+    const body=rows.map(r=>r.slice());
+    const ci=cols.findIndex(c=>c.k===sortK);
+    if(ci>=0) body.sort((a,b)=>{
+      const x=a[ci],y=b[ci];
+      if(typeof x==='number'&&typeof y==='number') return (x-y)*sortDir;
+      return String(x??'').localeCompare(String(y??''),'zh')*sortDir;
+    });
+    t.innerHTML='';
+    const th=document.createElement('tr');
+    cols.forEach((c,i)=>{
+      const e=document.createElement('th');
+      e.textContent=c.t+(sortK===c.k?(sortDir<0?' ▾':' ▴'):'');
+      if(c.align==='l') e.className='l';
+      e.onclick=()=>{ if(sortK===c.k) sortDir=-sortDir; else {sortK=c.k;sortDir=-1;} render(); };
+      th.appendChild(e);
+    });
+    t.appendChild(th);
+    const lim=body.slice(0,600);
+    lim.forEach(r=>{
+      const tr=document.createElement('tr');
+      cols.forEach((c,i)=>{
+        const td=document.createElement('td');
+        const v=r[i];
+        td.textContent=typeof v==='number'?(Number.isInteger(v)?fmt(v):fmt2(v)):(v??'—');
+        if(c.align==='l') td.className='l';
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    if(body.length>lim.length){
+      const tr=document.createElement('tr');
+      const td=document.createElement('td'); td.colSpan=cols.length;
+      td.className='l'; td.style.color='var(--ink-3)';
+      td.textContent=`… 共 ${fmt(body.length)} 行，此处显示前 ${lim.length} 行（点表头可排序）`;
+      tr.appendChild(td); t.appendChild(tr);
+    }
+    host.appendChild(t);
+  }
+  render();
+  return render;
+}
+</script>
+<script>
+/* ============================================================
+   看板逻辑
+   ============================================================ */
+const P=DATA.periods, META=DATA.meta, AUDIT=DATA.audit, BINS=DATA.bin_labels;
+const LUNAR_DAY=DATA.lunar_of_day||{};
+const ST=WB_STATE||{};
+let cal=ST.cal==='农历'?'农历':'公历';          // 历法 (同时决定季节同比图的对齐方式)
+let gran=['日','周','月'].includes(ST.gran)?ST.gran:'日';
+let rangeDays=ST.range!=null?+ST.range:0;
+let endDate=ST.endDate||META.date_max;          // 截止日, 默认最新
+let showDetail=ST.detail!=null?!!ST.detail:true;
+const EMBED=!!ST.embed;
+if(EMBED) document.body.classList.add('embed');   // 构建时已写进 <body>, 这里是兜底
+// 外壳指定深浅色时构建期就写进 <html> 了(免闪白); 这里同样只是兜底
+if(ST.theme==='dark'||ST.theme==='light') document.documentElement.setAttribute('data-theme',ST.theme);
+
+/* 所有"每次交互都要整个重建"的板块 */
+const SECTIONS=['trends','structure','structure2','diag','binDetail','extCharts','yoy'];
+/* 刚插进 DOM 的卡片宽度还没定型, 直接量 clientWidth 会量错(见 .charts2 注释)。
+   所以排两帧后再重绘一次, 让每张图按最终宽度重算 viewBox。 */
+function scheduleRedraw(){
+  requestAnimationFrame(()=>requestAnimationFrame(redrawAll));
+}
+function rerender(){
+  chartRegistry.length=0;
+  SECTIONS.forEach(id=>document.getElementById(id).innerHTML='');
+  render(); renderYoY();
+  scheduleRedraw();
+}
+
+/* 历法 × 粒度 -> P 里的数组键。
+   「农历日」不单独存一份 —— 它和「日」是完全相同的桶(一个自然日一个),
+   只有标签不同, 所以复用 P.日 再拿 LUNAR_DAY 换标签。 */
+function granKey(){
+  if(cal==='农历') return gran==='日' ? '日' : (gran==='周' ? '农历周' : '农历月');
+  return gran;
+}
+function granLabel(){ return cal+gran; }   // 公历日 / 公历周 / 农历月 …
+function prevLabelWord(){
+  return {公历:{日:'前一日',周:'前一周',月:'前一月'},
+          农历:{日:'前一农历日',周:'前一农历周',月:'前一农历月'}}[cal][gran];
+}
+function labelOf(x){
+  if(cal==='农历'&&gran==='日') return LUNAR_DAY[x.period]||x.period;
+  return x.label||x.period;
+}
+function dateInfo(d){   // 截止日同时给出公历与农历
+  return d + (LUNAR_DAY[d] ? '（农历' + LUNAR_DAY[d] + '）' : '');
+}
+
+/* 截止日 -> 实际窗口末点。周/月粒度下把截止日抬到「所在那一期的期末」,
+   这样每一期都是完整的 —— 否则选了 10-05 却把整个 10 月都算进来, 口径就错了。 */
+function effEnd(){
+  if(gran==='日') return endDate;
+  const hit=P[granKey()].find(x=>x.d0<=endDate && endDate<=(x.d1||x.d0));
+  return hit ? (hit.d1<META.date_max ? hit.d1 : META.date_max) : endDate;
+}
+function curPeriods(){
+  const e=effEnd();
+  let arr=P[granKey()].filter(x=>(x.d1||x.period)<=e);
+  if(rangeDays>0) arr=arr.slice(-rangeDays);
+  return arr;
+}
+
+/* ---------- 预警规则 ---------- */
+function evalRules(arr){
+  const p=arr[arr.length-1];
+  const prev=arr[arr.length-2];
+  const days=p.自然日数||1;
+  const up3=(()=>{ let c=0; for(let i=arr.length-1;i>0;i--){ if(arr[i].到场总均重>arr[i-1].到场总均重) c++; else break; } return c; })();
+  const r=[];
+  const num0=v=>(v==null||isNaN(v))?0:v;
+
+  // 规则 1 散户头数占比
+  const dS=num0(p.d_散户头数占比), overS=p.散户头数占比>30, jumpS=dS>5;
+  r.push({n:'散户头数占比', cond:'> 30% 或环比 +5pp', v:p.散户头数占比, hit:overS||jumpS,
+    why: overS ? fmt2(p.散户头数占比)+'% > 30%' : (jumpS ? '环比 +'+fmt2(dS)+'pp' : '') });
+
+  // 规则 2 150kg 以上头数占比
+  const dB=num0(p.d_大猪150占比), overB=p.大猪150占比>15, jumpB=dB>3;
+  r.push({n:'150kg 以上头数占比', cond:'> 15% 或环比 +3pp', v:p.大猪150占比, hit:overB||jumpB,
+    why: overB ? fmt2(p.大猪150占比)+'% > 15%' : (jumpB ? '环比 +'+fmt2(dB)+'pp' : '') });
+
+  // 规则 3 外调大猪车次
+  const extLim=5*days, pE=num0(p.pct_外调车次数), overE=p.外调车次数>extLim, jumpE=pE>50&&p.外调车次数>0;
+  r.push({n:'外调大猪车次', cond:`> ${extLim} 车 (5/日×${days}日) 或环比 +50%`, v:p.外调车次数,
+    hit:overE||jumpE,
+    why: overE ? `${p.外调车次数} > ${extLim}` : (jumpE ? '环比 +'+fmt1(pE)+'%' : '') });
+
+  // 规则 4 到场总均重
+  const overA=p.到场总均重>140&&up3>=3;
+  r.push({n:'到场总均重', cond:'> 140kg 且连续 3 期上升', v:p.到场总均重, hit:overA,
+    why: overA ? fmt1(p.到场总均重)+'kg 且连升 '+up3+' 期' : '' });
+
+  // 历史分位: 绝对阈值是日报口径, 长周期上会长期成立 —— 用分位看"当期到底异不异常"
+  // 分位拿【该历法粒度的全序列】算, 不受截止日/区间影响, 否则窗口一缩分位就跟着漂
+  const all=P[granKey()];
+  const pctile=(key)=>v=>{
+    const xs=all.map(x=>x[key]).filter(x=>x!=null&&!isNaN(x));
+    if(!xs.length||v==null) return null;
+    return xs.filter(x=>x<=v).length/xs.length*100;
+  };
+  const pk=['散户头数占比','大猪150占比','外调车次数','到场总均重'];
+  r.forEach((x,i)=>{ x.pct=pctile(pk[i])(x.v); });
+
+  return {rules:r, hit:r.filter(x=>x.hit), up3, prev, p, days};
+}
+function levelOf(n){
+  if(n>=3) return {k:'crit', t:'红 · 高压'};
+  if(n===2) return {k:'serious', t:'橙 · 压力偏高'};
+  if(n===1) return {k:'warn', t:'黄 · 需关注'};
+  return {k:'good', t:'绿 · 平稳'};
+}
+
+/* ---------- 八象限信号判读 ---------- */
+const SIG={
+ '101':{lv:'good',   t:'头数↑ 均重↓ 散户↑ —— 散户提前出栏，压力快速释放，之后转好'},
+ '111':{lv:'warn',   t:'头数↑ 均重↑ 散户↑ —— 散户出栏积极但体重没降，压力释放不彻底'},
+ '011':{lv:'serious',t:'头数↓ 均重↑ 散户↑ —— 散户压栏，供应后移，后续压力积累'},
+ '001':{lv:'good',   t:'头数↓ 均重↓ 散户↑ —— 散户恐慌出栏或淘汰，总量少，供应偏紧'},
+ '110':{lv:'serious',t:'头数↑ 均重↑ 散户↓ —— 规模场压栏后集中出栏，短期压力大'},
+ '100':{lv:'warn',   t:'头数↑ 均重↓ 散户↓ —— 规模场积极出栏，散户退出，短期压力大但后续供应减少'},
+ '010':{lv:'serious',t:'头数↓ 均重↑ 散户↓ —— 规模场压栏，供应后移，后续压力大'},
+ '000':{lv:'good',   t:'头数↓ 均重↓ 散户↓ —— 整体供应收缩，散户退出，价格有支撑'},
+};
+function verdict(arr){
+  const p=arr[arr.length-1];
+  const dH=p.d_总头数, dW=p.d_到场总均重, dS=p.d_散户头数占比;
+  if(dH==null||dW==null||dS==null) return null;
+  const key=`${dH>0?1:0}${dW>0?1:0}${dS>0?1:0}`;
+  return {key,...SIG[key], dH,dW,dS};
+}
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const arr=curPeriods();
+  if(arr.length<2){ document.getElementById('scopeHint').textContent='数据不足'; return; }
+  const {rules,hit,up3,p,prev,days}=evalRules(arr);
+  const lv=levelOf(hit.length);
+  const vd=verdict(arr);
+
+  document.getElementById('subtitle').textContent =
+    `${META.date_min} ~ ${META.date_max} · 有效车次 ${fmt(META.cars)} · 共 ${fmt(META.heads)} 头 · 到场总均重 ${fmt1(META.net/META.heads)}kg`;
+  const eE=effEnd();
+  /* 周/月粒度下截止日会被抬到期末 —— 抬过就要说出来, 否则用户以为自己选错了。
+     末期不完整只在「该期被数据末端砍断」时才提示(周/月的最后那一期常只到月中)。 */
+  const snap=eE!==endDate?'（已对齐到该期期末）':'';
+  const cut=p.d1===META.date_max&&gran!=='日'?'，末期未完':'';
+  document.getElementById('scopeHint').textContent =
+    `截止 ${dateInfo(eE)}${snap} · 当前视图 ${arr.length} 个${granLabel()}`
+    + `（${labelOf(arr[0])} ~ ${labelOf(p)}${cut}）`;
+
+  /* ---- 顶部预警灯 ---- */
+  const bn=document.getElementById('banner');
+  bn.innerHTML='';
+  const lamp=document.createElement('span'); lamp.className='lamp '+lv.k; bn.appendChild(lamp);
+  const txt=document.createElement('div');
+  txt.innerHTML=`<div class="headline">供应压力等级：${lv.t}　<span class="pilln">触发 ${hit.length}/4 条预警</span></div>
+    <div class="detail">${vd?vd.t:'—'}</div>`;
+  bn.appendChild(txt);
+  const sp=document.createElement('div'); sp.className='spacer'; bn.appendChild(sp);
+  hit.forEach(h=>{
+    const b=document.createElement('span'); b.className='badge';
+    b.innerHTML=`<span class="lamp ${lv.k}"></span>${h.n} · ${h.why}`;
+    bn.appendChild(b);
+  });
+
+  /* ---- KPI 磁贴 ---- */
+  const kp=document.getElementById('kpis'); kp.innerHTML='';
+  const spark=arr.slice(-12);
+  const tiles=[
+    {k:'总头数',   v:fmt(p.总头数),        d:p.d_总头数,      unit:'头', f:v=>fmt(v),  col:'--s1',
+     sd:spark.map(x=>x.总头数), good:'up'},
+    {k:'总净重',   v:fmt1(p.总净重/1e4),   d:p.d_总净重==null?null:p.d_总净重/1e4,
+     unit:'万kg', f:v=>fmt1(v), col:'--s1', sd:spark.map(x=>x.总净重), good:'up'},
+    {k:'到场总均重',v:fmt1(p.到场总均重),  d:p.d_到场总均重,  unit:'kg', f:v=>fmt1(v),   col:'--s1',
+     sd:spark.map(x=>x.到场总均重), good:'up'},
+    {k:'散户头数占比',v:fmt2(p.散户头数占比),d:p.d_散户头数占比,unit:'%', f:v=>fmt2(v)+'%',col:'--s2',
+     sd:spark.map(x=>x.散户头数占比), good:'down', pp:true},
+    {k:'150kg以上占比',v:fmt2(p.大猪150占比),d:p.d_大猪150占比,unit:'%', f:v=>fmt2(v)+'%',col:'--s2',
+     sd:spark.map(x=>x.大猪150占比), good:'down', pp:true},
+    {k:'外调大猪车次',v:fmt(p.外调车次数),  d:p.pct_外调车次数,unit:'车', f:v=>fmt(v),  col:'--s2',
+     sd:spark.map(x=>x.外调车次数), good:'down', pctd:true},
+  ];
+  tiles.forEach(t=>{
+    const c=document.createElement('div'); c.className='card tile';
+    const kk=document.createElement('div'); kk.className='k'; kk.textContent=t.k; c.appendChild(kk);
+    const vv=document.createElement('div'); vv.className='v';
+    vv.innerHTML=`${t.v}<span class="u">${t.unit}</span>`; c.appendChild(vv);
+    const dd=document.createElement('div'); dd.className='d';
+    if(t.d==null||isNaN(t.d)){ dd.innerHTML=`<span style="color:var(--ink-3)">无${prevLabelWord()}可比</span>`; }
+    else{
+      const rising=t.d>0, isGood=t.good==='up'?rising:!rising;
+      const cls=(t.d===0)?'':(isGood?'up':'dn');
+      const sign=t.d>0?'+':'';
+      const dv=t.pp?`${sign}${fmt2(t.d)}pp`:(t.pctd?`${sign}${fmt1(t.d)}%`:`${sign}${t.f(t.d)}`);
+      dd.innerHTML=`<span class="${cls}">${dv}</span> <span style="color:var(--ink-3)">vs ${prevLabelWord()}</span>`;
+    }
+    c.appendChild(dd);
+    const spv=document.createElement('div'); spv.className='sp'; c.appendChild(spv);
+    kp.appendChild(c);
+    requestAnimationFrame(()=>sparkline(spv,t.sd,cssv(t.col)));
+  });
+
+  /* ---- 信号卡 ---- */
+  const sc=document.getElementById('signalCard');
+  sc.innerHTML=`<h2>八象限信号判读 · 环比方向</h2>
+    <p class="note">对 ${labelOf(p)}（${prevLabelWord()}：${prev?labelOf(prev):'—'}）</p>
+    <div style="display:flex;flex-wrap:wrap;gap:26px;font-size:13px">
+      <div>头数 <b class="${vd.dH>0?'':'dn'}" style="color:${vd.dH>0?'var(--st-serious)':'var(--up-good)'}">${vd.dH>0?'↑ 增':'↓ 减'}</b>
+        <span class="pilln">${fmt2(vd.dH)} 头</span></div>
+      <div>到场总均重 <b style="color:${vd.dW>0?'var(--st-serious)':'var(--up-good)'}">${vd.dW>0?'↑ 增':'↓ 减'}</b>
+        <span class="pilln">${fmt2(vd.dW)} kg</span></div>
+      <div>散户头数占比 <b style="color:${vd.dS>0?'var(--st-serious)':'var(--up-good)'}">${vd.dS>0?'↑ 增':'↓ 减'}</b>
+        <span class="pilln">${fmt2(vd.dS)} pp</span></div>
+    </div>
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+      <span class="lamp ${SIG[vd.key].lv==='good'?'good':SIG[vd.key].lv==='warn'?'warn':'serious'}"></span>
+      <b style="font-size:14px">${SIG[vd.key].t}</b>
+    </div>`;
+
+  /* ---- 趋势小倍数：四张单序列图 ---- */
+  const th=document.getElementById('trends');
+  th.innerHTML='';
+  const lab=arr.map(labelOf);
+  const tdefs=[
+    {t:'到场总头数', n:'每期到场生猪头数合计（头）', key:'总头数', pct:false, area:true,
+      cols:[{t:'期间',k:'p',align:'l'},{t:'总头数',k:'a'},{t:'环比%',k:'b'}],
+      rows:arr.map(x=>[x.period,x.总头数,+(x.pct_总头数??0).toFixed(2)])},
+    {t:'到场总均重', n:'Σ净重 ÷ Σ头数，按头数加权（kg）', key:'到场总均重', pct:false, area:true, yZero:false,
+      cols:[{t:'期间',k:'p',align:'l'},{t:'到场总均重',k:'a'},{t:'环比pp',k:'b'}],
+      rows:arr.map(x=>[x.period,x.到场总均重,+(x.d_到场总均重??0).toFixed(2)])},
+    {t:'散户头数占比', n:'头数 < 60 的车次头数 ÷ 总头数（%）', key:'散户头数占比', pct:true, area:true,
+      cols:[{t:'期间',k:'p',align:'l'},{t:'散户头数占比%',k:'a'},{t:'环比pp',k:'b'}],
+      rows:arr.map(x=>[x.period,x.散户头数占比,+(x.d_散户头数占比??0).toFixed(2)])},
+    {t:'150kg 以上头数占比', n:'单车均重 ≥ 150kg 的车次头数 ÷ 总头数（%）', key:'大猪150占比', pct:true, area:true,
+      cols:[{t:'期间',k:'p',align:'l'},{t:'150kg以上占比%',k:'a'},{t:'环比pp',k:'b'}],
+      rows:arr.map(x=>[x.period,x.大猪150占比,+(x.d_大猪150占比??0).toFixed(2)])},
+  ];
+  tdefs.forEach((d,i)=>{
+    // 日粒度点数多时叠加均线(第二序列 -> 自动出图例)
+    const needMA=(gran==='日'&&arr.length>=90);
+    const ser=[{name:d.t,color:cssv('--s1'),data:arr.map(x=>x[d.key])}];
+    if(needMA){
+      const k=7, raw=arr.map(x=>x[d.key]);
+      ser.push({name:k+'期均线',color:cssv('--s2'),data:raw.map((_,i)=>{
+        if(i<k-1) return null;
+        const w=raw.slice(i-k+1,i+1);
+        return w.some(v=>v==null)?null:+(w.reduce((a,b)=>a+b,0)/k).toFixed(d.pct?2:1);
+      })});
+    }
+    lineChart(th,{title:d.t,note:d.n+(needMA?' · 含 7 期均线':''),labels:lab,
+      series:ser,pct:d.pct,area:!needMA,yZero:d.yZero!==false,h:196,tableId:'tt'+i,
+      tableCols:d.cols,tableRows:d.rows});
+  });
+
+  /* ---- 结构：体重段堆叠柱（5 档，90kg 以上；<90 单独成图） ---- */
+  const st=document.getElementById('structure'); st.innerHTML='';
+  const st2=document.getElementById('structure2'); st2.innerHTML='';
+
+  // 自动分桶：柱子太密时按 2/3/…期合并
+  const CMAX=120;
+  const k=Math.ceil(arr.length/CMAX);
+  let slabs=[], sarr=[];
+  if(k<=1){ sarr=arr; slabs=arr.map(labelOf); }
+  else{
+    for(let i=0;i<arr.length;i+=k){
+      const ch=arr.slice(i,i+k);
+      const o={period:ch[0].period+'~'+ch[ch.length-1].period,
+               label:labelOf(ch[0])+'~'+labelOf(ch[ch.length-1])};
+      BINS.forEach(b=>{ o['bin_'+b]=ch.reduce((a,x)=>a+(x['bin_'+b]||0),0); });
+      o.总头数=ch.reduce((a,x)=>a+x.总头数,0);
+      sarr.push(o); slabs.push(o.label);
+    }
+  }
+  const stackBins=['90-120kg','120-150kg','150-175kg','175-200kg','>200kg'];
+  const ordc=['--ord1','--ord2','--ord3','--ord4','--ord5'];
+  const totals5=stackBins.map(b=>sarr.reduce((a,x)=>a+(x['bin_'+b]||0),0));
+  const grand=totals5.reduce((a,b)=>a+b,0);
+  stackedColumn(st,{
+    title:'到场体重结构 · 单车均重分档（90kg 以上）',
+    note:(k>1?`柱子已按 ${k} 个${granLabel()}合并以便阅读 · `:'')+'堆叠为该期到场头数（头）· 各段占比见悬停',
+    labels:slabs,
+    series:stackBins.map((b,i)=>({name:b,color:cssv(ordc[i]),
+      data:sarr.map(x=>x['bin_'+b]||0),
+      share:grand?totals5[i]/grand*100:0})),
+    h:250, tableId:'tbin',
+    tableCols:[{t:'期间',k:'p',align:'l'},...stackBins.map(b=>({t:b+' 头数',k:b})),
+      {t:'90kg以上合计',k:'s'},{t:'<90kg 头数',k:'u'}],
+    tableRows:sarr.map(x=>[x.period,...stackBins.map(b=>x['bin_'+b]||0),
+      stackBins.reduce((a,b)=>a+(x['bin_'+b]||0),0), x['bin_<90kg']||0]),
+  });
+
+  // <90kg 占比（单序列，独立成图 —— 提前出栏最早信号）
+  lineChart(st2,{
+    title:'<90kg 头数占比', note:'体重不足 90kg 的到场头数占比（%）· 提前出栏 / 恐慌出栏的最早信号',
+    labels:lab,
+    series:[{name:'<90kg 占比',color:cssv('--s2'),
+      data:arr.map(x=>x.总头数? +((x['bin_<90kg']||0)/x.总头数*100).toFixed(3):null)}],
+    pct:true,area:true,h:196,tableId:'tlt90',yZero:true,
+    tableCols:[{t:'期间',k:'p',align:'l'},{t:'<90kg 头数',k:'a'},{t:'占比%',k:'b'}],
+    tableRows:arr.map(x=>[x.period,x['bin_<90kg']||0,
+      x.总头数? +((x['bin_<90kg']||0)/x.总头数*100).toFixed(3):0]),
+  });
+
+  // 散户 vs 规模场 均重（双序列，图例必出）
+  lineChart(st2,{
+    title:'散户 vs 规模场 · 到场均重', note:'各群体 Σ净重 ÷ Σ头数（kg）· 两序列同轴（kg）',
+    labels:lab,
+    series:[
+      {name:'散户 (<60头)',color:cssv('--s1'),data:arr.map(x=>x.散户均重)},
+      {name:'规模场 (≥60头)',color:cssv('--s2'),data:arr.map(x=>x.规模场均重)},
+    ],
+    h:196,tableId:'tgrp',
+    tableCols:[{t:'期间',k:'p',align:'l'},{t:'散户均重',k:'a'},{t:'规模场均重',k:'b'},
+      {t:'差(散户-规模场)',k:'c'}],
+    tableRows:arr.map(x=>[x.period,x.散户均重,x.规模场均重,
+      (x.散户均重!=null&&x.规模场均重!=null)? +(x.散户均重-x.规模场均重).toFixed(2):null]),
+  });
+
+  /* ---- 口径警示: 头数 vs 均重 共线性 ---- */
+  const dg=document.getElementById('diag'); dg.innerHTML='';
+  const D=DATA.diag, HB=DATA.head_band;
+  barChart(dg,{
+    title:'单车头数 ↑ ⇒ 单车均重 ↓（把"散户"和"大猪"粘成了一个变量）',
+    note:'按单车头数分档看该档的平均单车均重（kg）· 条形越长=该档猪越重',
+    items:HB.map(r=>({name:r.档+' 头',v:r.均重,_:r})),
+    color:cssv('--s1'),unit:' kg',metric:'平均单车均重',tableId:'tdiagba',
+    tipExtra:d=>`<div class="ttr"><span class="nm">车次</span><span class="vl">${fmt(d._.车次)}　${fmt2(d._.车次占比)}%</span></div>
+      <div class="ttr"><span class="nm">头数占比</span><span class="vl">${fmt2(d._.头数占比)}%</span></div>
+      <div class="ttr"><span class="nm">150+大猪占该档</span><span class="vl">${fmt2(d._["大猪占该档%"])}%</span></div>`,
+    tableCols:[{t:'头数档',k:'a',align:'l'},{t:'车次数',k:'n'},{t:'车次占比%',k:'c'},
+      {t:'头数占比%',k:'h'},{t:'平均单车均重kg',k:'w'},{t:'150+大猪占该档%',k:'b'}],
+    tableRows:HB.map(r=>[r.档,r.车次,r.车次占比,r.头数占比,r.均重,r["大猪占该档%"]])});
+  const wc2=card(dg,{title:'口径警示：结论怎么读才不会错',
+    note:'Pearson '+D.pearson+' / Spearman '+D.spearman+'（单车头数 vs 单车均重，车次层面）'});
+  wc2.plot.innerHTML=`
+   <div style="font-size:13px;line-height:1.75;color:var(--ink-2)">
+    <p style="margin:0 0 10px">
+     <b style="color:var(--ink-1)">问题：</b>"散户 = 单车头数 &lt; ${META.retail_max_head}" 这个代理变量，在这份数据里与"大猪车"高度重合——
+     <b style="color:var(--ink-1)">散户车中 ${fmt2(D.retail_big_share)}% 的头数都是 150kg 以上</b>（规模场车只有 ${fmt2(D.scale_big_share)}%）；
+     散户车单车均重中位数 <b style="color:var(--ink-1)">${fmt1(D.retail_avg_w)}kg</b>，规模场 <b style="color:var(--ink-1)">${fmt1(D.scale_avg_w)}kg</b>。</p>
+    <p style="margin:0 0 10px">
+     <b style="color:var(--ink-1)">含义：</b>八象限框架里的"散户↑"和"均重↑"两个维度，在这份数据上<u>不是两个独立信号</u>——它们大概率同向变动。
+     所以当出现"散户↑ + 均重↑"时，不要读成两个独立证据叠加，它更像<u>同一个事实被数了两遍</u>。真正正交的两个维度其实是
+     <b style="color:var(--ink-1)">①总量（头数）</b> 和 <b style="color:var(--ink-1)">②体重结构</b>。</p>
+    <p style="margin:0">
+     <b style="color:var(--ink-1)">建议：</b>① 用"外调大猪车次"（均重≥150 且 &gt;${META.big_min_head}头）作为独立的"大猪集中度"口径，它与散户车基本互斥；
+     ② 若要真散户口径，把阈值降到 <b>头数 &lt; 40</b>（车次占比 ${fmt1(D.retail40_car_pct)}%、头数占比 ${fmt1(D.retail40_head_pct)}%、该组均重 ${fmt1(D.retail40_avg_w)}kg），此时才更接近"小批量"而非"大猪"；
+     ③ 判断供应压力主要看<b>头数方向</b>与<b>到场总均重的方向</b>，散户占比当作辅助佐证。</p>
+   </div>`;
+
+  /* ---- 体重段明细表 (全量 + 散户/规模场拆分) ---- */
+  const bd=document.getElementById('binDetail'); bd.innerHTML='';
+  const bg=DATA.bin_group;
+  const aggBin={};
+  BINS.forEach(b=>aggBin[b]={车次数:0,头数:0,净重:0,_w:0});
+  bg.forEach(r=>{ const a=aggBin[r.体重段]; if(!a) return;
+    a.车次数+=r.车次数; a.头数+=r.头数; a.净重+=r.净重; a._w+=r.均重*r.车次数; });
+  const T=Object.values(aggBin).reduce((a,b)=>({车次数:a.车次数+b.车次数,头数:a.头数+b.头数,净重:a.净重+b.净重}),{车次数:0,头数:0,净重:0});
+  const slot=card(bd,{title:'体重段汇总（单车均重分档，全量）',
+    note:'分箱规则：按单车均重左闭右开 · 头数占比/净重占比为全量占比 · 平均单车头数=头数÷车次数'});
+  slot.plot.classList.add('tblwrap');
+  buildTable(slot.plot,
+    [{t:'体重段',k:'b',align:'l'},{t:'车次数',k:'n'},{t:'头数',k:'h'},{t:'净重kg',k:'w'},
+     {t:'头数占比%',k:'hp'},{t:'净重占比%',k:'wp'},{t:'平均单车头数',k:'av'},{t:'平均均重kg',k:'aw'}],
+    BINS.map(b=>{const a=aggBin[b];
+      return [b,a.车次数,a.头数,+a.净重.toFixed(0),
+        T.头数?+(a.头数/T.头数*100).toFixed(2):0,
+        T.净重?+(a.净重/T.净重*100).toFixed(2):0,
+        a.车次数?+(a.头数/a.车次数).toFixed(1):0,
+        a.车次数?+(a._w/a.车次数).toFixed(2):0];}));
+
+  const slot2=card(bd,{title:'体重段 × 群体（散户 <60头 / 规模场 ≥60头）',
+    note:'两张子表：各群体内部的体重段分布 · 用于对比散户与规模场的出栏体重结构差异'});
+  slot2.plot.classList.add('tblwrap');
+  const gNames=['散户(<60头)','规模场(>=60头)'];
+  const gTot={};
+  gNames.forEach(g=>{gTot[g]={车次数:0,头数:0,净重:0};
+    bg.filter(r=>r.群体===g).forEach(r=>{gTot[g].车次数+=r.车次数;gTot[g].头数+=r.头数;gTot[g].净重+=r.净重;});});
+  buildTable(slot2.plot,
+    [{t:'群体',k:'g',align:'l'},{t:'体重段',k:'b',align:'l'},{t:'车次数',k:'n'},{t:'头数',k:'h'},
+     {t:'净重kg',k:'w'},{t:'群体内头数占比%',k:'p'},{t:'平均单车头数',k:'av'},{t:'平均均重kg',k:'aw'}],
+    gNames.flatMap(g=>BINS.map(b=>{
+      const r=bg.find(x=>x.群体===g&&x.体重段===b)||{车次数:0,头数:0,净重:0,均重:0};
+      return [g,b,r.车次数,r.头数,+r.净重.toFixed(0),
+        gTot[g].头数?+(r.头数/gTot[g].头数*100).toFixed(2):0,
+        r.车次数?+(r.头数/r.车次数).toFixed(1):0, r.均重||0];})));
+
+  /* ---- 外调大猪 ---- */
+  const ex=document.getElementById('extCharts'); ex.innerHTML='';
+  ex.className='grid charts2';
+  // 车次(车) 与 头数占比(%) 单位不同 —— 拆成两张单序列图, 不混轴
+  lineChart(ex,{
+    title:'外调大猪车次数', note:`单车均重 ≥ ${META.big_avg}kg 且头数 > ${META.big_min_head} 的车次（车）`,
+    labels:lab,
+    series:[{name:'外调车次数',color:cssv('--s1'),data:arr.map(x=>x.外调车次数)}],
+    area:true,yZero:true,h:205,tableId:'text',
+    tableCols:[{t:'期间',k:'p',align:'l'},{t:'外调车次',k:'a'},{t:'外调头数',k:'b'},{t:'环比%',k:'b2'},
+      {t:'外调均重',k:'d'}],
+    tableRows:arr.map(x=>[x.period,x.外调车次数,x.外调头数,
+      x.pct_外调车次数==null?0:+x.pct_外调车次数.toFixed(2),x.外调均重]),
+  });
+  lineChart(ex,{
+    title:'外调大猪头数占比', note:'外调大猪头数 ÷ 当期总头数（%）',
+    labels:lab,
+    series:[{name:'外调头数占比',color:cssv('--s2'),data:arr.map(x=>x.外调头数占比)}],
+    pct:true,area:true,yZero:true,h:205,tableId:'text2',
+    tableCols:[{t:'期间',k:'p',align:'l'},{t:'外调头数',k:'a'},{t:'外调头数占比%',k:'b'}],
+    tableRows:arr.map(x=>[x.period,x.外调头数,x.外调头数占比]),
+  });
+  const extCard=document.getElementById('extTable');
+  extCard.innerHTML='';
+  const extSlot=card(extCard,{title:`外调大猪明细表（全量 ${fmt(DATA.ext_total)} 车，取最近 400 车）`,
+    note:'单车均重 ≥ 150kg 且头数 > 70 · 点表头排序'});
+  extSlot.plot.classList.add('tblwrap');
+  buildTable(extSlot.plot,[
+    {t:'业务日期',k:'d',align:'l'},{t:'单据编号',k:'n',align:'l'},{t:'车牌号',k:'p',align:'l'},
+    {t:'车辆规格',k:'v',align:'l'},{t:'头数',k:'h'},{t:'均重kg',k:'w'},{t:'净重kg',k:'e'},
+    {t:'客户',k:'c',align:'l'},{t:'创建人',k:'u',align:'l'}],
+    DATA.ext_detail.map(r=>[r.业务日期,r.单据编号,r.车牌号,r.车辆规格,r.头数,r.均重,r.净重,r.客户,r.创建人]));
+
+  /* ---- 预警规则判定 ---- */
+  const rc=document.getElementById('rulesCard');
+  const band=v=>v==null?{c:'var(--ink-3)',t:'—'}
+    :v>=90?{c:'var(--st-crit)',t:'极高'}
+    :v>=75?{c:'var(--st-serious)',t:'偏高'}
+    :v>=25?{c:'var(--ink-2)',t:'常态'}
+    :v>=10?{c:'var(--ink-2)',t:'偏低'}:{c:'var(--ink-3)',t:'极低'};
+  rc.innerHTML=`<p class="note">判定对象：<b>${labelOf(p)}</b>（${granLabel()}）· 期内 ${days} 个自然日 · 对比 ${prev?labelOf(prev):'—'}
+   · <b>触发阈值按你给的口径写死（多为日报口径），长周期上部分绝对阈值会长期成立；"历史分位"列告诉你当期在 ${granLabel()}序列里到底算不算异常</b></p>
+  <table class="rules"><tr><th>状态</th><th>指标</th><th>当前值</th><th>历史分位</th><th>触发条件</th><th>命中原因</th></tr>
+  ${rules.map(r=>{const b=band(r.pct);return `<tr>
+    <td><span class="st"><span class="lamp ${r.hit?'crit':'good'}" style="width:10px;height:10px"></span>${r.hit?'<b>触发</b>':'正常'}</span></td>
+    <td>${r.n}</td><td class="pilln">${fmt2(r.v)}</td>
+    <td class="pilln" style="color:${b.c}">${r.pct==null?'—':fmt1(r.pct)+'% · '+b.t}</td>
+    <td style="color:var(--ink-3)">${r.cond}</td>
+    <td style="color:${r.hit?'var(--st-crit)':'var(--ink-3)'}">${r.why||'—'}</td></tr>`}).join('')}
+  </table>`;
+
+  /* ---- 审计 ---- */
+  const ac=document.getElementById('auditCard');
+  const kv=Object.entries(AUDIT).filter(([k])=>k!=='源文件'&&k!=='存疑说明');
+  ac.innerHTML=`<p class="note">源文件：${AUDIT['源文件']||'—'} · 清洗保留率 ${AUDIT['清洗保留率']}</p>
+  <div class="audit">${kv.map(([k,v])=>`<div><span>${k}</span><span class="n${(String(k).startsWith('剔除')&&v>0)||String(k).startsWith('存疑')?' warn':''}">${v}</span></div>`).join('')}</div>
+  <p class="note" style="margin-top:14px">
+  口径：散户 = 单车头数 &lt; ${META.retail_max_head}；大猪 = 单车均重 ≥ ${META.big_avg}kg；
+  外调大猪 = 单车均重 ≥ ${META.big_avg}kg 且头数 &gt; ${META.big_min_head}；到场总均重 = Σ净重 ÷ Σ头数（按头数加权，非单车均重简单平均）。
+  体重段按<b>单车均重</b>左闭右开分箱。业务日期为准归集。</p>
+  <p class="note">剔除规则：只剔<b>非生猪</b>记录（车牌/车辆规格/客户含车间·猪头·连肝肉·分割·副产·消泡剂）、头数=1 且净重&gt;1000kg、
+  单车均重 &lt; ${META.avg_lo}kg。<b>不设体重上界</b>——真实大猪车（单车均重 250kg 以上）全部保留，因此本页到场总均重与源文件导出「合计」行可直接对上。</p>
+  <p class="note" style="margin-top:10px"><b style="color:var(--ink-1)">存疑记录（已保留，未剔除，${fmt(DATA.qc_rows.length)} 车）</b>
+   · 判定：单车均重 &gt; ${META.qc_hi}kg 或 皮重为 0 · ${AUDIT['存疑说明']||''} · 建议回源单据核对头数/皮重</p>
+  <div class="tblwrap" id="qcTbl"></div>`;
+  buildTable(document.getElementById('qcTbl'),[
+    {t:'业务日期',k:'d',align:'l'},{t:'单据编号',k:'n',align:'l'},{t:'车牌号',k:'p',align:'l'},
+    {t:'净重kg',k:'w'},{t:'头数',k:'h'},{t:'皮重kg',k:'t'},{t:'单车均重kg',k:'a'}],
+    DATA.qc_rows.map(r=>[r.业务日期,r.单据编号,r.车牌号,r.净重,r.头数,r.皮重,r.单车均重]));
+}
+
+/* ---------- 季节同比: 公历 / 农历 两套对齐, 2025 绿 · 2026 红 ---------- */
+const YOY=DATA.yoy, YOY_M=YOY.metrics;
+let yoySmooth=7;
+/* 对齐方式跟着顶部「历法」走 —— 只留一处口径, 免得出现"走势图按农历、同比较按公历"的分裂 */
+function yoyAlign(){ return cal==='农历'?'lunar':'solar'; }
+
+/* 槽位 -> 月号。公历的槽位是"一年里的第几天", 农历的是"月×30+日" */
+function slotMonth(mk,i,d){ return mk==='lunar' ? Math.floor(i/30)+1 : +d.slice(5,7); }
+/* 月度对比表按同一截止日截断: 某年某月只要还有一天 ≤ 截止日就保留 */
+function tableKeep(mk,M){
+  const keep={};
+  M.series.forEach(s=>{
+    const dd=(M.dates||{})[s.key];
+    if(!dd) return;
+    const set=new Set();
+    dd.forEach((d,i)=>{ if(d&&d<=endDate) set.add(slotMonth(mk,i,d)); });
+    keep[s.key]=set;
+  });
+  return keep;
+}
+
+/* 移动平均。给了 w 就按 w 加权 —— 头数加权后
+   占比 = Σ(占比ᵢ×头数ᵢ)/Σ头数ᵢ 正好等于窗口内的真实合计占比,
+   均重 = Σ(均重ᵢ×头数ᵢ)/Σ头数ᵢ 正好等于 Σ净重/Σ头数, 都不是简单平均。*/
+function roll7(vals,w){
+  const out=[];
+  for(let i=0;i<vals.length;i++){
+    let s=0,sw=0;
+    for(let j=Math.max(0,i-6);j<=i;j++){
+      const v=vals[j]; if(v==null) continue;
+      const k=(w&&w[j]!=null)?w[j]:1;
+      s+=v*k; sw+=k;
+    }
+    out.push(sw>0?+(s/sw).toFixed(2):null);
+  }
+  return out;
+}
+function renderYoY(){
+  const mk=yoyAlign(), M=YOY.modes[mk];
+  const host=document.getElementById('yoy'); host.innerHTML='';
+  document.getElementById('yoyAlignHint').textContent=cal==='农历'?'按农历日期对齐':'按公历日期对齐';
+  document.getElementById('yoyHint').textContent=
+    M.hint+(META.date_max>endDate?`　已按截止日 ${endDate} 截断。`:'');
+  /* 平滑口径按指标说清楚: 总头数是等权日均, 其余三张是按头数加权(占比/均重不能简单平均) */
+  const smTxt=k=>yoySmooth===7
+    ? (k==='总头数'?'近 7 日日均':'近 7 日移动平均（按头数加权）')
+    : '原始日值，未平滑';
+  const keep=tableKeep(mk,M);
+  YOY_M.forEach((m,i)=>{
+    const ser=M.series.filter(s=>M.data[s.key]).map(s=>{
+      const raw=M.data[s.key][m.key], w=M.data[s.key]['总头数'];
+      let data=(yoySmooth===7)?roll7(raw,(m.key==='总头数')?null:w):raw;
+      /* 按截止日逐点截断。用 M.dates 里每个槽位的真实日期判断 —— 公历/农历两套槽位
+         规则不同, 让前端反推"第 i 格是几月几号"容易出错。截断必须放在平滑【之后】:
+         平滑窗口是"含当日的前 7 天"(10-14 = 10-08~10-14), 先截断的话末期会继续往后画。*/
+      const dd=(M.dates||{})[s.key];
+      if(dd) data=data.map((v,j)=>(dd[j]&&dd[j]<=endDate)?v:null);
+      return {name:s.name,color:cssv(s.color),data:data,dash:s.dash};
+    });
+    const t=M.table[m.key];
+    /* 表里第 i 行固定对应 YOY.years[i] —— 该年这个月只要有一天 ≤ 截止日就保留 */
+    const ok=(yi,mo)=>!keep[YOY.years[yi]]||keep[YOY.years[yi]].has(mo);
+    const rows=M.tableLab.map((lab,jo)=>{
+      const mo=jo+1;
+      const a=(t[0]&&ok(0,mo))?t[0][mo]:null, b=(t[1]&&ok(1,mo))?t[1][mo]:null;
+      return [lab,a,b,(a==null||b==null)?null:+(b-a).toFixed(2)];
+    });
+    lineChart(host,{title:m.title,note:m.note+' · '+smTxt(m.key),
+      labels:M.labels,tipLabels:M.tips,tickAt:M.tickAt,series:ser,pct:m.pct,h:210,
+      tableId:'yt'+i,
+      tableCols:[{t:'月份',k:'m',align:'l'},{t:YOY.years[0],k:'a'},
+                 {t:YOY.years[1],k:'b'},{t:`差(${YOY.years[1].slice(2)}−${YOY.years[0].slice(2)})`,k:'d'}],
+      tableRows:rows});
+  });
+}
+
+/* ---------- 明细板块显隐 ---------- */
+const DET_IDS=['secBin','secExtTable','secAudit'];
+function applyDetail(){
+  const on=showDetail;
+  DET_IDS.forEach(id=>document.getElementById(id).classList.toggle('hide',!on));
+  const seg=document.getElementById('segDetail');
+  if(seg) [...seg.children].forEach(x=>x.setAttribute('aria-pressed',
+    String((x.dataset.d==='1')===on)));
+}
+
+/* ---------- 交互 ---------- */
+function segClick(el,attr,fn){
+  el.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    [...el.children].forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+    fn(b.dataset[attr]);
+  });
+}
+segClick(document.getElementById('segCal'),'c',v=>{ cal=v; syncDateInput(); rerender(); });
+segClick(document.getElementById('segGran'),'g',v=>{ gran=v; syncDateInput(); rerender(); });
+segClick(document.getElementById('segRange'),'r',v=>{ rangeDays=+v; rerender(); });
+segClick(document.getElementById('segDetail'),'d',v=>{ showDetail=v==='1'; applyDetail(); reportHeight(); });
+document.getElementById('segYoySmooth').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  [...e.currentTarget.children].forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  yoySmooth=+b.dataset.s;
+  rerender();
+});
+document.getElementById('dtEnd').addEventListener('change',e=>{
+  const v=e.target.value;
+  if(v) { endDate=v; rerender(); }
+});
+document.getElementById('btnLatest').addEventListener('click',()=>{
+  endDate=META.date_max; syncDateInput(); rerender();
+});
+function syncDateInput(){
+  const el=document.getElementById('dtEnd');
+  if(el){ el.min=META.date_min; el.max=META.date_max; el.value=endDate; }
+}
+document.getElementById('themeBtn').onclick=()=>{
+  const cur=document.documentElement.getAttribute('data-theme');
+  const sysDark=matchMedia('(prefers-color-scheme:dark)').matches;
+  const next=cur==='dark'?'light':(cur==='light'?'dark':(sysDark?'light':'dark'));
+  document.documentElement.setAttribute('data-theme',next);
+  chartRegistry.length=0;
+  SECTIONS.forEach(id=>document.getElementById(id).innerHTML='');
+  document.getElementById('kpis').innerHTML='';
+  render(); renderYoY(); scheduleRedraw();
+};
+
+/* ---------- 嵌进外壳(Streamlit)时把自身高度报回去 ----------
+   否则 iframe 高度写死, 里面会多出一条滚动条。srcdoc iframe 与父页同源,
+   frameElement 可直接改父页里那个 <iframe> 的高度。 */
+let _lastH=0;
+function reportHeight(){
+  if(!EMBED) return;
+  const h=Math.ceil(document.documentElement.getBoundingClientRect().height);
+  if(Math.abs(h-_lastH)<4) return;      // 防 ResizeObserver -> 改高度 -> 再触发 的死循环
+  _lastH=h;
+  try{
+    if(window.frameElement) window.frameElement.style.height=h+'px';
+  }catch(e){}
+  try{ parent.postMessage({wbHeight:h},'*'); }catch(e){}
+}
+
+render();
+renderYoY();
+applyDetail();
+syncDateInput();
+/* 首帧绘制时 CSS grid 尚未定型, plot.clientWidth 会取到整行宽度,
+   导致 viewBox 偏大 → 图形被等比压扁并垂直居中。布局完成后再重绘一次。 */
+scheduleRedraw();
+addEventListener('load', scheduleRedraw);
+setTimeout(redrawAll, 400);
+/* 图表是异步画的, 高度会变好几种 —— 卡片切换"表格"、粒度切换都会改变总高 */
+[80,400,1200].forEach(ms=>setTimeout(reportHeight,ms));
+addEventListener('resize',()=>setTimeout(reportHeight,120));
+new ResizeObserver(()=>reportHeight()).observe(document.body);
+</script>
+</body>
+</html>

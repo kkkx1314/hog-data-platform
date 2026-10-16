@@ -1,6 +1,21 @@
-streamlit>=1.28
-pandas>=2.0
-numpy>=1.24
+# 生猪产业舆情数据采集系统 — Python 依赖
+# 安装: pip install -r requirements.txt
+#
+# 核心采集依赖
+playwright>=1.62.0
+requests>=2.32.0
+beautifulsoup4>=4.14.0
+# NLP / 分析
+jieba>=0.42.0
+scikit-learn>=1.9.0
+snownlp>=0.12.0
+pandas>=2.3.0
+numpy>=2.4.0
+# 原有项目依赖
+streamlit>=1.50
 plotly>=5.17
 openpyxl>=3.1
 lunardate>=0.2
+# 可选（增强功能，体积较大）:
+# transformers>=4.40.0    # BERT-based 情感分析 (~2GB)
+# torch>=2.0.0            # transformers 依赖
