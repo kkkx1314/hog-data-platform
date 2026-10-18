@@ -15,6 +15,11 @@ TPL = os.path.join(HERE, '_wb_template.html')
 SRC = os.path.join(HERE, '_wb_data.json')
 OUT = r'D:\CC\Desktop\社会供应压力看板.html'
 CLOUD_SRC = os.path.join(HERE, 'data', '_wb_data.json')
+PUBLIC_HTML = os.path.join(HERE, 'docs', 'index.html')   # GitHub Pages 站点首页
+
+# 仓库是公开的、Pages 也是公开的 —— 这两块明细里有【车牌号】【客户名】【创建人】，
+# 公开产物必须剔掉。桌面那份照旧保留全部。
+PUBLIC_DROP = ('ext_detail', 'qc_rows')
 
 # 构建器自检要看的关键字段
 NEED_KEYS = ['periods', 'audit', 'bin_labels', 'ext_detail', 'qc_rows', 'bin_group', 'yoy',
@@ -37,6 +42,13 @@ def scrub(o):
 def load_data(path=None):
     with open(path or SRC, encoding='utf-8') as f:
         return json.load(f)
+
+
+def public_data(data):
+    """公开版投影：去掉含车牌号/客户名的两块明细，其余聚合数据一个不动。"""
+    out = {k: v for k, v in data.items() if k not in PUBLIC_DROP}
+    assert not any(k in out for k in PUBLIC_DROP), '公开版仍带敏感明细'
+    return out
 
 
 def build_html(data=None, state=None, tpl_path=None):
@@ -79,11 +91,26 @@ def main():
     assert data['yoy']['years'] == ['2025', '2026'], '同比年份表不对'
     print('自检通过：无 NaN，关键字段齐全')
 
+    # ---- 公开产物（仓库公开、Pages 公开）：数据先做投影 ----
+    pub = public_data(data)
+    cloud_blob = json.dumps(pub, ensure_ascii=False, separators=(',', ':'))
+    # 兜底：车号/客户名不能混进来
+    for canary in ('云A', 'SNRYCLGBD'):
+        assert canary not in cloud_blob, f'公开版数据里仍有 {canary}'
+
     # 云端副本：Streamlit Cloud 上没有 D:\CC\Desktop，只能读仓库里的 data/
     os.makedirs(os.path.dirname(CLOUD_SRC), exist_ok=True)
     with open(CLOUD_SRC, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
-    print(f'云端副本 -> {CLOUD_SRC}  ({os.path.getsize(CLOUD_SRC)/1024/1024:.2f} MB)')
+        f.write(cloud_blob)
+    print(f'云端副本 -> {CLOUD_SRC}  ({os.path.getsize(CLOUD_SRC)/1024/1024:.2f} MB, 已去明细)')
+
+    # GitHub Pages 首页：整份看板 + 数据都内嵌在一个文件里
+    pub_html = build_html(pub, state={'detail': False})
+    os.makedirs(os.path.dirname(PUBLIC_HTML), exist_ok=True)
+    with open(PUBLIC_HTML, 'w', encoding='utf-8') as f:
+        f.write(pub_html)
+    assert '云A' not in pub_html and 'SNRYCLGBD' not in pub_html, '公开版 HTML 仍带车号'
+    print(f'Pages 首页 -> {PUBLIC_HTML}  ({os.path.getsize(PUBLIC_HTML)/1024/1024:.2f} MB)')
 
 
 if __name__ == '__main__':

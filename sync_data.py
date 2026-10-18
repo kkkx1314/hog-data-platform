@@ -200,7 +200,8 @@ else:
 # [4/5] Git 提交
 print()
 print("[4/5] 提交到 Git...")
-subprocess.run(["git", "add", "data/"], cwd=str(BASE), check=True)
+# docs/ 是 GitHub Pages 的首页（_wb_build.py 生成，公开版不含车牌/客户）
+subprocess.run(["git", "add", "data/", "docs/"], cwd=str(BASE), check=True)
 diff = subprocess.run(
     ["git", "diff", "--cached", "--name-only"],
     cwd=str(BASE), capture_output=True, text=True

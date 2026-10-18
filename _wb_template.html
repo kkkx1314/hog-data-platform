@@ -684,7 +684,10 @@ let cal=ST.cal==='农历'?'农历':'公历';          // 历法 (同时决定季
 let gran=['日','周','月'].includes(ST.gran)?ST.gran:'日';
 let rangeDays=ST.range!=null?+ST.range:0;
 let endDate=ST.endDate||META.date_max;          // 截止日, 默认最新
-let showDetail=ST.detail!=null?!!ST.detail:true;
+// 公开版快照剔掉了 ext_detail / qc_rows（含车牌号、客户名）—— 这时明细三块整体不提供，
+// 连开关一起藏掉，不然点进去是三块空表
+const HAS_DETAIL=!!((DATA.ext_detail||[]).length||(DATA.qc_rows||[]).length);
+let showDetail=HAS_DETAIL?(ST.detail!=null?!!ST.detail:true):false;
 const EMBED=!!ST.embed;
 if(EMBED) document.body.classList.add('embed');   // 构建时已写进 <body>, 这里是兜底
 // 外壳指定深浅色时构建期就写进 <html> 了(免闪白); 这里同样只是兜底
@@ -1094,7 +1097,7 @@ function render(){
     {t:'业务日期',k:'d',align:'l'},{t:'单据编号',k:'n',align:'l'},{t:'车牌号',k:'p',align:'l'},
     {t:'车辆规格',k:'v',align:'l'},{t:'头数',k:'h'},{t:'均重kg',k:'w'},{t:'净重kg',k:'e'},
     {t:'客户',k:'c',align:'l'},{t:'创建人',k:'u',align:'l'}],
-    DATA.ext_detail.map(r=>[r.业务日期,r.单据编号,r.车牌号,r.车辆规格,r.头数,r.均重,r.净重,r.客户,r.创建人]));
+    (DATA.ext_detail||[]).map(r=>[r.业务日期,r.单据编号,r.车牌号,r.车辆规格,r.头数,r.均重,r.净重,r.客户,r.创建人]));
 
   /* ---- 预警规则判定 ---- */
   const rc=document.getElementById('rulesCard');
@@ -1125,13 +1128,13 @@ function render(){
   体重段按<b>单车均重</b>左闭右开分箱。业务日期为准归集。</p>
   <p class="note">剔除规则：只剔<b>非生猪</b>记录（车牌/车辆规格/客户含车间·猪头·连肝肉·分割·副产·消泡剂）、头数=1 且净重&gt;1000kg、
   单车均重 &lt; ${META.avg_lo}kg。<b>不设体重上界</b>——真实大猪车（单车均重 250kg 以上）全部保留，因此本页到场总均重与源文件导出「合计」行可直接对上。</p>
-  <p class="note" style="margin-top:10px"><b style="color:var(--ink-1)">存疑记录（已保留，未剔除，${fmt(DATA.qc_rows.length)} 车）</b>
+  <p class="note" style="margin-top:10px"><b style="color:var(--ink-1)">存疑记录（已保留，未剔除，${fmt((DATA.qc_rows||[]).length)} 车）</b>
    · 判定：单车均重 &gt; ${META.qc_hi}kg 或 皮重为 0 · ${AUDIT['存疑说明']||''} · 建议回源单据核对头数/皮重</p>
   <div class="tblwrap" id="qcTbl"></div>`;
   buildTable(document.getElementById('qcTbl'),[
     {t:'业务日期',k:'d',align:'l'},{t:'单据编号',k:'n',align:'l'},{t:'车牌号',k:'p',align:'l'},
     {t:'净重kg',k:'w'},{t:'头数',k:'h'},{t:'皮重kg',k:'t'},{t:'单车均重kg',k:'a'}],
-    DATA.qc_rows.map(r=>[r.业务日期,r.单据编号,r.车牌号,r.净重,r.头数,r.皮重,r.单车均重]));
+    (DATA.qc_rows||[]).map(r=>[r.业务日期,r.单据编号,r.车牌号,r.净重,r.头数,r.皮重,r.单车均重]));
 }
 
 /* ---------- 季节同比: 公历 / 农历 两套对齐, 2025 绿 · 2026 红 ---------- */
@@ -1216,8 +1219,13 @@ function applyDetail(){
   const on=showDetail;
   DET_IDS.forEach(id=>document.getElementById(id).classList.toggle('hide',!on));
   const seg=document.getElementById('segDetail');
-  if(seg) [...seg.children].forEach(x=>x.setAttribute('aria-pressed',
-    String((x.dataset.d==='1')===on)));
+  if(seg){
+    [...seg.children].forEach(x=>x.setAttribute('aria-pressed',
+      String((x.dataset.d==='1')===on)));
+    // 没有明细数据的公开版: 连「明细 隐藏/显示」这个开关也不摆出来
+    const grp=seg.closest('.fgroup');
+    if(grp) grp.style.display=HAS_DETAIL?'':'none';
+  }
 }
 
 /* ---------- 交互 ---------- */

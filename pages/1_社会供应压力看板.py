@@ -73,8 +73,11 @@ with st.container(border=True):
     rl = c4.segmented_control('区间', list(RANGE_LABELS), default='全部', key='wb_rng') or '全部'
 
     c5, c6, c7 = st.columns([1.0, 1.3, 2.3])
-    det = c5.toggle('显示明细', value=False, key='wb_det',
-                    help='体重段明细 / 审计存疑 / 口径诊断三块')
+    # 云端那份快照剔掉了含车牌号/客户名的两块明细；没有明细时开关只读
+    has_detail = bool(data.get('ext_detail')) or bool(data.get('qc_rows'))
+    det = c5.toggle('显示明细', value=False, key='wb_det', disabled=not has_detail,
+                    help='体重段明细 / 审计存疑 / 口径诊断三块'
+                         if has_detail else '公开版不含明细（车牌号、客户名已剔除）')
     th = c6.segmented_control('主题', list(THEMES), default='跟随系统', key='wb_theme') or '跟随系统'
     html = _build(path, os.path.getmtime(path), cal, gran, end.isoformat(),
                   RANGE_LABELS[rl], det, THEMES[th])
