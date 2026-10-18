@@ -5,7 +5,7 @@
 调运数据策略：找到最新的二次去重文件，将其中新日期追加到全量合并文件，
 生成一个日期范围更大的统一全量文件。
 """
-import shutil, re, subprocess
+import shutil, re, subprocess, tempfile
 from pathlib import Path
 import pandas as pd
 
@@ -44,14 +44,41 @@ def extract_date_tag(name: str) -> str:
     return ""
 
 
+def publish_pages() -> str:
+    """把 docs/index.html（_wb_build.py 生成的公开版看板）强制推成 gh-pages 分支。
+
+    GitHub Pages 的站点源就是这条分支，每次只有一个 index.html + 一次提交，
+    所以用 -f 覆盖，仓库不会越滚越大。失败不影响主流程（只提示）。
+    """
+    pub_html = DATA.parent / "docs" / "index.html"
+    if not pub_html.exists():
+        return "跳过（没有 docs/index.html，先跑一次「更新看板数据.bat」）"
+    cfg = lambda k, d: (subprocess.run(["git", "config", k], cwd=str(BASE),
+                                       capture_output=True, text=True).stdout.strip() or d)
+    name, email = cfg("user.name", "sync"), cfg("user.email", "sync@local")
+    remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=str(BASE),
+                            capture_output=True, text=True).stdout.strip()
+    with tempfile.TemporaryDirectory() as td:
+        shutil.copy2(pub_html, Path(td) / "index.html")
+        for args in (["init", "-q"],
+                     ["add", "index.html"],
+                     ["-c", f"user.name={name}", "-c", f"user.email={email}",
+                      "commit", "-q", "-m", "pages: 社会供应压力看板（公开版）"],
+                     ["push", "-f", remote, "HEAD:gh-pages"]):
+            r = subprocess.run(["git", *args], cwd=td, capture_output=True, text=True)
+            if r.returncode:
+                raise RuntimeError(f"git {' '.join(args[:2])} 失败: {(r.stderr or r.stdout).strip()[:300]}")
+    return "已刷新 https://kkkx1314.github.io/hog-data-platform/"
+
+
 def add_synced(cat: str, tag: str, fname: str):
     if fname not in seen_files:
         seen_files.add(fname)
         synced.setdefault(cat, []).append((tag, fname))
 
 
-# [1/5] 复制平台数据到 data/（排除调运文件，调运在 [2/5] 单独处理）
-print("[1/5] 复制平台数据...")
+# [1/6] 复制平台数据到 data/（排除调运文件，调运在 [2/6] 单独处理）
+print("[1/6] 复制平台数据...")
 copied = 0
 if PLATFORM.exists():
     for f in sorted(PLATFORM.glob("*.xlsx")):
@@ -65,9 +92,9 @@ if PLATFORM.exists():
 else:
     print(f"  [WARN] 平台数据目录不存在: {PLATFORM}")
 
-# [2/5] 调运数据：追加新日期到全量文件
+# [2/6] 调运数据：追加新日期到全量文件
 print()
-print("[2/5] 调运数据：合并追加新日期...")
+print("[2/6] 调运数据：合并追加新日期...")
 
 # 2a. 找到现有的全量合并文件
 existing_full = None
@@ -181,9 +208,9 @@ else:
         old = transport_files[1][0]
         print(f"  (调运目录共 {len(transport_files)} 个日期段，上次截止 {old[:4]}.{old[4:6]}.{old[6:]})")
 
-# [3/5] 清理旧文件
+# [3/6] 清理旧文件
 print()
-print("[3/5] 清理旧文件...")
+print("[3/6] 清理旧文件...")
 if PLATFORM.exists():
     src_names = {f.name for f in PLATFORM.glob("*.xlsx")}
     src_names.update(f.name for f in TRANSPORT_DIR.glob("*.xlsx") if not f.name.startswith("~$"))
@@ -197,11 +224,10 @@ if not deleted_files:
 else:
     print(f"  清理完成 ({len(deleted_files)} 个旧文件)")
 
-# [4/5] Git 提交
+# [4/6] Git 提交
 print()
-print("[4/5] 提交到 Git...")
-# docs/ 是 GitHub Pages 的首页（_wb_build.py 生成，公开版不含车牌/客户）
-subprocess.run(["git", "add", "data/", "docs/"], cwd=str(BASE), check=True)
+print("[4/6] 提交到 Git...")
+subprocess.run(["git", "add", "data/"], cwd=str(BASE), check=True)
 diff = subprocess.run(
     ["git", "diff", "--cached", "--name-only"],
     cwd=str(BASE), capture_output=True, text=True
@@ -213,10 +239,21 @@ if changed_files:
 else:
     print("  数据无变化，跳过提交")
 
-# [5/5] 推送
+# [5/6] 推送
 print()
-print("[5/5] 推送到 GitHub...")
+print("[5/6] 推送到 GitHub...")
 subprocess.run(["git", "push"], cwd=str(BASE), check=True)
+
+# [6/6] 刷新公开站点
+print()
+print("[6/6] 刷新公开站点（GitHub Pages）...")
+try:
+    print(f"  {publish_pages()}")
+    pages_ok = True
+except Exception as e:
+    print(f"  [WARN] 刷新失败: {e}")
+    print("  主数据已推上去，这一步可以稍后重跑；或到仓库 Settings -> Pages 检查源是否为 gh-pages 分支")
+    pages_ok = False
 
 # ==================== 同步摘要 ====================
 print()
@@ -257,5 +294,9 @@ if changed_files:
 else:
     print()
     print(f"  [Git] 无变更")
+
+print()
+print("  [公开站点] " + ("https://kkkx1314.github.io/hog-data-platform/"
+                         if pages_ok else "本次未刷新（见上面的 WARN）"))
 
 print("=" * 55)

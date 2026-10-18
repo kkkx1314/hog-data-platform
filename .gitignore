@@ -11,4 +11,6 @@ __pycache__/
 !requirements.txt
 !data/*.xlsx
 !data/*.json
+# 公开站点只发到 gh-pages 分支（sync_data.publish_pages 负责），不在 master 里存副本
+docs/
 ~$*
