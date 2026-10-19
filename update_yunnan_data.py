@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-更新云南日报数据：把桌面最新「涌益咨询日度数据」同步到 data/ 并重新生成两个日报，
-最后提交推送到 GitHub。
+更新云南日报数据：把桌面最新「涌益咨询日度数据」同步到 data/ 并重新生成两个日报。
+数据与日报只保留在本机，不再提交到 GitHub（仓库是公开的）。
 双击 更新云南日报数据.bat 即可运行。
 """
 import shutil
-import subprocess
 from pathlib import Path
 
 import price_reports as pr
@@ -40,19 +39,7 @@ with open(BASE / "云南日报.html", "w", encoding="utf-8") as f:
     f.write(pr.build_yunnan_report_html(yunnan, yn_latest))
 print(f"  价差日报.html / 云南日报.html 已更新（数据截止 {yn_latest}）")
 
-# [4/4] 提交并推送
-print("[4/4] 提交并推送到 GitHub ...")
-subprocess.run(["git", "add", "data/", "价差日报.html", "云南日报.html"],
-               cwd=str(BASE), check=True)
-diff = subprocess.run(["git", "diff", "--cached", "--name-only"],
-                      cwd=str(BASE), capture_output=True, text=True)
-changed = [l.strip() for l in diff.stdout.strip().split("\n") if l.strip()] if diff.stdout.strip() else []
-if changed:
-    subprocess.run(["git", "commit", "-m", f"data: 更新涌益日度数据 {latest_date}"], cwd=str(BASE), check=True)
-    print("  提交成功")
-else:
-    print("  数据无变化，跳过提交")
-
-subprocess.run(["git", "push"], cwd=str(BASE), check=True)
+# [4/4] 数据只留本机
+print("[4/4] 数据与日报只保留在本机（data/、日报 HTML 已 gitignore），不上传 GitHub")
 print()
 print("完成 ✅")

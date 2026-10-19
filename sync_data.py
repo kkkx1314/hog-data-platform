@@ -1,7 +1,8 @@
 """
-一键同步：平台数据 + 调运数据 -> data/ -> GitHub
+一键同步：平台数据 + 调运数据 -> data/（仅保留本机），并刷新两个公开看板。
 双击 同步数据到GitHub.bat 即可运行
 
+数据文件不再进 Git（data/ 已 gitignore）；公开站点仍通过 gh-pages 发布。
 调运数据策略：找到最新的二次去重文件，将其中新日期追加到全量合并文件，
 生成一个日期范围更大的统一全量文件。
 """
@@ -252,25 +253,13 @@ if not deleted_files:
 else:
     print(f"  清理完成 ({len(deleted_files)} 个旧文件)")
 
-# [4/6] Git 提交
+# [4/6] 数据不再入库
 print()
-print("[4/6] 提交到 Git...")
-subprocess.run(["git", "add", "data/"], cwd=str(BASE), check=True)
-diff = subprocess.run(
-    ["git", "diff", "--cached", "--name-only"],
-    cwd=str(BASE), capture_output=True, text=True
-)
-changed_files = [l.strip() for l in diff.stdout.strip().split("\n") if l.strip()] if diff.stdout.strip() else []
-if changed_files:
-    subprocess.run(["git", "commit", "-m", "data: 同步平台数据+调运数据"], cwd=str(BASE))
-    print("  提交成功")
-else:
-    print("  数据无变化，跳过提交")
+print("[4/6] 数据仅保留本机（data/ 已 gitignore），跳过 Git 提交")
 
-# [5/6] 推送
+# [5/6] 数据不再推 master
 print()
-print("[5/6] 推送到 GitHub...")
-subprocess.run(["git", "push"], cwd=str(BASE), check=True)
+print("[5/6] 跳过推送（数据不再进 master；公开页在 [6/6] 单独发 gh-pages）")
 
 # [6/6] 刷新公开站点
 print()
@@ -316,12 +305,8 @@ if deleted_files:
     print()
     print(f"  [已清理] {len(deleted_files)} 个旧文件")
 
-if changed_files:
-    print()
-    print(f"  [Git] 已提交并推送到 GitHub")
-else:
-    print()
-    print(f"  [Git] 无变更")
+print()
+print(f"  [Git] 数据未上传（仅保留本机 data/）")
 
 print()
 print("  [公开站点] " + ("https://kkkx1314.github.io/hog-data-platform/"

@@ -13,6 +13,9 @@ __pycache__/
 data/
 # 公开站点只发到 gh-pages 分支（sync_data.publish_pages 负责），不在 master 里存副本
 docs/
+# 生成的日报 HTML 含完整行情数据，只留本机
+云南日报.html
+价差日报.html
 ~$*
 
 # 看板公开页密码（本地文件，不进仓库）
