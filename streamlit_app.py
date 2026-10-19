@@ -17,4 +17,6 @@ st.navigation([
             url_path="pig-price", default=True),
     st.Page("pages/1_社会供应压力看板.py", title="社会供应压力看板", icon="🟣",
             url_path="supply-pressure"),
+    st.Page("pages/2_饲料产量看板.py", title="饲料产量看板", icon="🌾",
+            url_path="feed-output"),
 ], position="top").run()

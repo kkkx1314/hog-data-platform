@@ -77,6 +77,19 @@ def add_synced(cat: str, tag: str, fname: str):
         synced.setdefault(cat, []).append((tag, fname))
 
 
+# [0/6] 刷新饲料看板快照：桌面四份 Excel -> data/feed_dashboard.json
+# 失败不阻断主流程；沿用旧快照，页面上会显示旧的截止月份。
+print("[0/6] 刷新饲料看板快照...")
+try:
+    import build_feed_dashboard_data as bfd
+    try:
+        bfd.main()
+    except SystemExit as e:
+        print(f"  [WARN] 看板快照校验未通过 (exit {e.code})，沿用旧快照")
+except Exception as e:
+    print(f"  [WARN] 跳过看板快照：{e}")
+print()
+
 # [1/6] 复制平台数据到 data/（排除调运文件，调运在 [2/6] 单独处理）
 print("[1/6] 复制平台数据...")
 copied = 0
