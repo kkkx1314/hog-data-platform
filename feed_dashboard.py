@@ -74,6 +74,8 @@ NOTE_MD = """
   - 猪料（合计）= 仔猪饲料 + 母猪饲料 + 生长肥育猪饲料 + 其他猪饲料
 - 「全部饲料」文件未单列其他猪饲料，但猪料合计中已包含它；按品类看时只能选到 8 项。
 - 环比 = (本月 ÷ 上月 − 1) × 100；同比 = (本月 ÷ 上年同月 − 1) × 100，保留两位小数。
+- 季度产量 = 该季度 3 个月产量之和；季度环比 = 本季 ÷ 上季 − 1；
+  季度同比 = 本季 ÷ 上年同季 − 1。只有 3 个月数据齐全的季度才计算。
 - 四个口径互为校验：全部饲料 = 配合饲料 + 浓缩饲料 + 添加剂预混合饲料
   （除 2021-12 的历史修订差异外，逐月、逐品类成立）。
 """
@@ -245,6 +247,28 @@ def shift_month(month, delta):
     return f'{idx // 12:04d}-{idx % 12 + 1:02d}'
 
 
+def shift_quarter(quarter, delta):
+    """'2026-Q3' + 1 -> '2026-Q4'；跨年自动处理。"""
+    y, n = quarter.split('-Q')
+    idx = int(y) * 4 + (int(n) - 1) + delta
+    return f'{idx // 4:04d}-Q{idx % 4 + 1}'
+
+
+def quarter_months(quarter):
+    """'2026-Q3' -> ['2026-07', '2026-08', '2026-09']"""
+    y, n = quarter.split('-Q')
+    y, n = int(y), int(n)
+    return [f'{y}-{(n - 1) * 3 + i:02d}' for i in (1, 2, 3)]
+
+
+def quarter_value(scope, quarter, cat):
+    """季度产量 = 3 个月之和；任一月缺失则返回 None（不计算不完整季度）。"""
+    vals = [value_at(scope, m, cat) for m in quarter_months(quarter)]
+    if any(v is None for v in vals):
+        return None
+    return round(sum(vals), 2)
+
+
 def pct_change(cur, prev):
     if cur is None or prev in (None, 0):
         return None
@@ -255,13 +279,30 @@ def value_at(scope, month, cat):
     return scope.get('levels', {}).get(month, {}).get(cat)
 
 
-def metric_value(scope, month, cat, metric):
-    """metric: 'level' | 'mom' | 'yoy'；返回吨或百分数。"""
-    cur = value_at(scope, month, cat)
+def period_value(scope, period, cat):
+    """period 为 'YYYY-MM' 或 'YYYY-Qn'。"""
+    if '-Q' in period:
+        return quarter_value(scope, period, cat)
+    return value_at(scope, period, cat)
+
+
+def metric_value(scope, period, cat, metric):
+    """metric: 'level' | 'mom' | 'yoy'；返回吨或百分数。
+
+    period 为 'YYYY-MM' 时 mom=环比、yoy=同比；
+    为 'YYYY-Qn' 时 mom=季度环比、yoy=季度同比。
+    """
+    if '-Q' in period:
+        cur = quarter_value(scope, period, cat)
+        if metric == 'level':
+            return cur
+        step = -1 if metric == 'mom' else -4
+        return pct_change(cur, quarter_value(scope, shift_quarter(period, step), cat))
+    cur = value_at(scope, period, cat)
     if metric == 'level':
         return cur
     if metric == 'mom':
-        return pct_change(cur, value_at(scope, shift_month(month, -1), cat))
+        return pct_change(cur, value_at(scope, shift_month(period, -1), cat))
     if metric == 'yoy':
-        return pct_change(cur, value_at(scope, shift_month(month, -12), cat))
+        return pct_change(cur, value_at(scope, shift_month(period, -12), cat))
     raise ValueError(f'未知指标 {metric}')

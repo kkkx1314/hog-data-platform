@@ -365,11 +365,16 @@ if __name__ == '__main__':
 
     if '--no-dashboard' not in sys.argv:
         import subprocess
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              'build_feed_dashboard_data.py')
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, 'build_feed_dashboard_data.py')
         print('\n== 生成线上看板快照 ==')
-        r = subprocess.run([sys.executable, script],
-                           cwd=os.path.dirname(script))
+        r = subprocess.run([sys.executable, script], cwd=here)
         if r.returncode:
             print('[WARN] 看板快照生成失败（Excel 已更新）；'
                   '可稍后单独运行 build_feed_dashboard_data.py')
+        else:
+            site = os.path.join(here, 'build_feed_public_site.py')
+            print('\n== 生成公开页 docs/feed/index.html ==')
+            r2 = subprocess.run([sys.executable, site], cwd=here)
+            if r2.returncode:
+                print('[WARN] 公开页生成失败；可稍后单独运行 build_feed_public_site.py')

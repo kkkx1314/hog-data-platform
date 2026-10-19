@@ -45,12 +45,16 @@ def extract_date_tag(name: str) -> str:
 
 
 def publish_pages() -> str:
-    """把 docs/index.html（_wb_build.py 生成的公开版看板）强制推成 gh-pages 分支。
+    """把公开页面强制推成 gh-pages 分支。
 
-    GitHub Pages 的站点源就是这条分支，每次只有一个 index.html + 一次提交，
+    - docs/index.html      -> 社会供应压力看板（根路径）
+    - docs/feed/index.html -> 饲料产量看板（/feed/，独立页面）
+
+    GitHub Pages 的站点源就是这条分支，每次只有少量文件 + 一次提交，
     所以用 -f 覆盖，仓库不会越滚越大。失败不影响主流程（只提示）。
     """
     pub_html = DATA.parent / "docs" / "index.html"
+    feed_html = DATA.parent / "docs" / "feed" / "index.html"
     if not pub_html.exists():
         return "跳过（没有 docs/index.html，先跑一次「更新看板数据.bat」）"
     cfg = lambda k, d: (subprocess.run(["git", "config", k], cwd=str(BASE),
@@ -60,15 +64,21 @@ def publish_pages() -> str:
                             capture_output=True, text=True).stdout.strip()
     with tempfile.TemporaryDirectory() as td:
         shutil.copy2(pub_html, Path(td) / "index.html")
+        files = ["index.html"]
+        if feed_html.exists():
+            (Path(td) / "feed").mkdir()
+            shutil.copy2(feed_html, Path(td) / "feed" / "index.html")
+            files.append("feed/index.html")
         for args in (["init", "-q"],
-                     ["add", "index.html"],
+                     ["add", *files],
                      ["-c", f"user.name={name}", "-c", f"user.email={email}",
-                      "commit", "-q", "-m", "pages: 社会供应压力看板（公开版）"],
+                      "commit", "-q", "-m", "pages: 社会供应压力看板 + 饲料产量看板"],
                      ["push", "-f", remote, "HEAD:gh-pages"]):
             r = subprocess.run(["git", *args], cwd=td, capture_output=True, text=True)
             if r.returncode:
                 raise RuntimeError(f"git {' '.join(args[:2])} 失败: {(r.stderr or r.stdout).strip()[:300]}")
-    return "已刷新 https://kkkx1314.github.io/hog-data-platform/"
+    tail = "（饲料看板 /feed/）" if "feed/index.html" in files else ""
+    return f"已刷新 https://kkkx1314.github.io/hog-data-platform/{tail}"
 
 
 def add_synced(cat: str, tag: str, fname: str):
@@ -84,6 +94,8 @@ try:
     import build_feed_dashboard_data as bfd
     try:
         bfd.main()
+        import build_feed_public_site as bfs
+        bfs.main()
     except SystemExit as e:
         print(f"  [WARN] 看板快照校验未通过 (exit {e.code})，沿用旧快照")
 except Exception as e:
@@ -310,6 +322,7 @@ else:
 
 print()
 print("  [公开站点] " + ("https://kkkx1314.github.io/hog-data-platform/"
+                         "（饲料看板：/feed/）"
                          if pages_ok else "本次未刷新（见上面的 WARN）"))
 
 print("=" * 55)

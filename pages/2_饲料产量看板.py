@@ -3,14 +3,14 @@
 
 交互：
   · 饲料口径：全部饲料 / 配合饲料 / 浓缩饲料 / 添加剂预混料
-  · 指标：月度产量 / 月度环比 / 月度同比
+  · 频率：月度 / 季度；指标：产量 / 环比 / 同比
   · 品类：猪料合计 + 8 个分项（嵌套口径）
   · 对比年份：默认近三年，可多选
 
 图表：
-  1. 同月对比折线（2026 高亮，历史年份为灰色参照）；
-  2. 最新年份 1-9 月的月度柱图（环比/同比用红涨蓝跌，带正负号标签）；
-  3. 月度明细表 + CSV 下载。
+  1. 同期对比折线（2026 红、2025 绿、2024 黑，更早年份为灰色参照）；
+  2. 最新年份的月度/季度柱图（环比/同比用红涨蓝跌，带正负号标签）；
+  3. 月度/季度明细表 + CSV 下载。
 
 数据层见 feed_dashboard.py；云端快照 data/feed_dashboard.json。
 """
@@ -27,18 +27,18 @@ import feed_dashboard as fd
 st.set_page_config(page_title="饲料产量看板", page_icon="🌾", layout="wide")
 
 FONT = 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif'
-MONTH_LABELS = [f'{m}月' for m in range(1, 13)]
 
-# 参考 dataviz 调色板（浅/深色分别取步进值）；2026/2025/2024 用固定色，
+# 年份固定色：2026 红 / 2025 绿 / 2024 黑（与社会供应压力看板口径一致），
 # 更早年份用中性灰阶做背景参照。颜色跟随年份实体，不随筛选重排。
+# 深色模式下“黑色”改为近白，否则在深底上不可见。
 THEMES = {
     'light': {
         'bg': '#ffffff', 'text': '#0b0b0b', 'secondary': '#52514e',
         'muted': '#898781', 'grid': '#e1e0d9', 'axis': '#c3c2b7',
-        'years': {2026: '#2a78d6', 2025: '#eb6834', 2024: '#1baf7a',
+        'years': {2026: '#d2352f', 2025: '#0f8f45', 2024: '#0b0b0b',
                   2023: '#6b6a64', 2022: '#898781', 2021: '#a8a69c', 2020: '#c3c2b7'},
-        'blue': '#2a78d6', 'blue_light': '#5598e7', 'blue_dark': '#184f95',
-        'pos': '#e34948', 'neg': '#2a78d6',
+        'bar_level': '#d66b66', 'bar_level_latest': '#8f1712',
+        'pos': '#d2352f', 'neg': '#2a78d6',
         'up_text': '#b3261e', 'down_text': '#1d4ed8',
         'kpi_bg': '#f9f9f7', 'kpi_bd': 'rgba(11,11,11,0.08)',
         'hover_bg': '#ffffff',
@@ -46,17 +46,18 @@ THEMES = {
     'dark': {
         'bg': '#0e1117', 'text': '#ffffff', 'secondary': '#c3c2b7',
         'muted': '#898781', 'grid': '#2c2c2a', 'axis': '#383835',
-        'years': {2026: '#3987e5', 2025: '#d95926', 2024: '#199e70',
+        'years': {2026: '#ef5b52', 2025: '#35c46e', 2024: '#f0f0f0',
                   2023: '#6b6a64', 2022: '#898781', 2021: '#a8a69c', 2020: '#c3c2b7'},
-        'blue': '#3987e5', 'blue_light': '#2a78d6', 'blue_dark': '#86b6ef',
-        'pos': '#e66767', 'neg': '#3987e5',
+        'bar_level': '#b8534e', 'bar_level_latest': '#ff8a80',
+        'pos': '#ef5b52', 'neg': '#3987e5',
         'up_text': '#ff8a80', 'down_text': '#82b1ff',
         'kpi_bg': '#1a1a19', 'kpi_bd': 'rgba(255,255,255,0.10)',
         'hover_bg': '#1a1a19',
     },
 }
 
-METRICS = {'月度产量': 'level', '月度环比': 'mom', '月度同比': 'yoy'}
+FREQS = {'月度': 'M', '季度': 'Q'}
+METRICS = {'产量': 'level', '环比': 'mom', '同比': 'yoy'}
 METRIC_UNIT = {'level': '吨', 'mom': '%', 'yoy': '%'}
 
 st.markdown("""
@@ -142,15 +143,65 @@ def _card(label, value, unit, line, theme, value_color=None, line_is_note=False)
 
 
 def _year_style(year):
+    # 2025 绿 / 2026 红在红绿色盲下区分度有限，用线型 + 数据点 + 直接标注
+    # 做第二重编码，颜色不是唯一线索。
     return {
-        2026: (2.8, True, 'solid'),
-        2025: (2.2, True, 'solid'),
-        2024: (2.0, True, 'solid'),
+        2026: (3.0, True, 'solid'),
+        2025: (2.4, True, 'dash'),
+        2024: (2.2, True, 'dot'),
         2023: (1.4, False, 'solid'),
         2022: (1.4, False, 'dash'),
         2021: (1.4, False, 'dot'),
         2020: (1.4, False, 'dashdot'),
     }.get(year, (1.4, False, 'solid'))
+
+
+def _period_keys(freq):
+    """返回 (数据键后缀, 显示标签)：月度 12 个，季度 4 个。"""
+    if freq == 'Q':
+        return [f'Q{q}' for q in range(1, 5)], [f'Q{q}' for q in range(1, 5)]
+    return [f'{m:02d}' for m in range(1, 13)], [f'{m}月' for m in range(1, 13)]
+
+
+def _period_key(freq, year, idx):
+    """idx 为 0-based：月度 -> 2026-03；季度 -> 2026-Q2。"""
+    if freq == 'Q':
+        return f'{year}-Q{idx + 1}'
+    return f'{year}-{idx + 1:02d}'
+
+
+def _latest_quarter_idx(scope, year):
+    """该年最新完整季度的 0-based 下标；没有完整季度返回 -1。"""
+    latest = scope.get('latest') or ''
+    if not latest[:4].isdigit():
+        return -1
+    ly, lm = int(latest[:4]), int(latest[5:])
+    if year < ly:
+        return 3
+    if year > ly:
+        return -1
+    return lm // 3 - 1
+
+
+def _latest_period(scope, freq):
+    latest = scope.get('latest')
+    if not latest:
+        return None
+    if freq == 'M':
+        return latest
+    idx = _latest_quarter_idx(scope, int(latest[:4]))
+    return _period_key('Q', int(latest[:4]), idx) if idx >= 0 else None
+
+
+def _shift_period(period, freq, delta):
+    if freq == 'Q':
+        return fd.shift_quarter(period, delta)
+    return fd.shift_month(period, delta)
+
+
+def _period_no(period, freq):
+    """期间序号（月度 1-12，季度 1-4），用于累计和当年期数。"""
+    return int(period.split('-Q')[1]) if freq == 'Q' else int(period[5:])
 
 
 def _year_color(year, theme):
@@ -181,31 +232,38 @@ def _label_years(data_by_year, years, idx):
     return picked
 
 
-def fig_seasonal(scope, cat, metric, years, theme):
+def fig_seasonal(scope, cat, metric, years, theme, freq='M'):
     years = sorted(set(years))
+    _, x_labels = _period_keys(freq)
     data_by_year = {
-        y: [fd.metric_value(scope, f'{y}-{m:02d}', cat, metric) for m in range(1, 13)]
+        y: [fd.metric_value(scope, _period_key(freq, y, i), cat, metric)
+            for i in range(len(x_labels))]
         for y in years
     }
     focus_year = max(years)
     latest = scope.get('latest') or ''
-    label_idx = (int(latest[5:]) - 1
-                 if latest[:4].isdigit() and int(latest[:4]) == focus_year else 11)
-    labels = _label_years(data_by_year, years, label_idx)
+    if freq == 'Q':
+        label_idx = (_latest_quarter_idx(scope, focus_year)
+                     if latest[:4].isdigit() and int(latest[:4]) == focus_year else 3)
+    else:
+        label_idx = (int(latest[5:]) - 1
+                     if latest[:4].isdigit() and int(latest[:4]) == focus_year else 11)
+    label_idx = max(0, label_idx)
+    label_years = _label_years(data_by_year, years, label_idx)
     fig = go.Figure()
 
     for y in years:
         vals = data_by_year[y]
         width, focus, dash = _year_style(y)
         color = _year_color(y, theme)
-        text = [''] * 12
-        if focus and y in labels and vals[label_idx] is not None:
+        text = [''] * len(x_labels)
+        if focus and y in label_years and vals[label_idx] is not None:
             v = vals[label_idx]
             text[label_idx] = f'{v:,.0f}' if metric == 'level' else f'{v:+.1f}%'
         hover = ('%{y:,.2f} 吨<extra></extra>' if metric == 'level'
                  else '%{y:+.2f}%<extra></extra>')
         fig.add_trace(go.Scatter(
-            x=MONTH_LABELS, y=vals, name=f'{y}年',
+            x=x_labels, y=vals, name=f'{y}年',
             mode='lines+markers+text' if focus else 'lines',
             line=dict(color=color, width=width, dash=dash),
             marker=(dict(size=8, color=color, line=dict(width=2, color=theme['bg']))
@@ -249,18 +307,23 @@ def fig_seasonal(scope, cat, metric, years, theme):
     return fig
 
 
-def fig_monthly_bars(scope, cat, metric, year, theme):
-    latest = scope.get('latest')
-    max_m = int(latest[5:]) if latest and int(latest[:4]) == year else 12
-    months = list(range(1, max_m + 1))
-    vals = [fd.metric_value(scope, f'{year}-{m:02d}', cat, metric) for m in months]
-    x = [f'{m}月' for m in months]
+def fig_period_bars(scope, cat, metric, year, theme, freq='M'):
+    if freq == 'Q':
+        n = _latest_quarter_idx(scope, year) + 1
+        periods = [_period_key('Q', year, i) for i in range(n)]
+        x = [f'Q{i + 1}' for i in range(n)]
+    else:
+        latest = scope.get('latest')
+        n = int(latest[5:]) if latest and int(latest[:4]) == year else 12
+        periods = [_period_key('M', year, i) for i in range(n)]
+        x = [f'{i + 1}月' for i in range(n)]
+    vals = [fd.metric_value(scope, p, cat, metric) for p in periods]
 
     if metric == 'level':
-        colors = [theme['blue_light']] * len(vals)
+        colors = [theme['bar_level']] * len(vals)
         valid = [i for i, v in enumerate(vals) if v is not None]
         if valid:
-            colors[valid[-1]] = theme['blue_dark']
+            colors[valid[-1]] = theme['bar_level_latest']
         text = [''] * len(vals)
         if valid:
             text[valid[-1]] = f'{vals[valid[-1]]:,.0f}'
@@ -329,7 +392,7 @@ theme = _theme()
 st.markdown(f"""
 <div class="app-head">
   <h1>🌾 云南饲料产量看板</h1>
-  <div class="sub">月度产量 · 环比 · 同比 ｜ 数据截至 {latest_global}
+  <div class="sub">月度 / 季度产量 · 环比 · 同比 ｜ 数据截至 {latest_global}
     ｜ 来源：{html.escape(meta.get('source', ''))}</div>
 </div>
 """, unsafe_allow_html=True)
@@ -344,15 +407,20 @@ with st.container(border=True):
     scope_key = fd.LABEL_TO_KEY[scope_label]
     scope = scopes[scope_key]
 
-    c1, c2, c3 = st.columns([1.15, 1.25, 1.6])
-    metric_label = c1.segmented_control(
-        '指标', list(METRICS), default='月度环比', key='feed_metric',
-    ) or '月度环比'
+    c1, c2, c3, c4 = st.columns([0.9, 0.9, 1.5, 1.4])
+    freq_label = c1.segmented_control(
+        '频率', list(FREQS), default='月度', key='feed_freq',
+        help='季度产量 = 该季度 3 个月产量之和；只对完整季度计算环比/同比',
+    ) or '月度'
+    freq = FREQS[freq_label]
+    metric_label = c2.segmented_control(
+        '指标', list(METRICS), default='环比', key='feed_metric_kind',
+    ) or '环比'
     metric = METRICS[metric_label]
 
     cat_raw = scope['categories']
     cat_labels = [fd.CATEGORY_LABELS.get(c, c) for c in cat_raw]
-    cat_label = c2.selectbox(
+    cat_label = c3.selectbox(
         '品类', cat_labels, index=0, key=f'feed_cat_{scope_key}',
         help='仔猪=哺乳+保育，母猪=后备+其他母猪；分项不可相加',
     )
@@ -360,86 +428,108 @@ with st.container(border=True):
 
     all_years = sorted({int(m[:4]) for m in scope['months']}, reverse=True)
     default_years = [y for y in (2026, 2025, 2024) if y in all_years] or all_years[:3]
-    years = c3.multiselect(
+    years = c4.multiselect(
         '对比年份', all_years, default=default_years, key=f'feed_years_{scope_key}',
         max_selections=6,
-        help='默认近三年；2026 蓝色高亮，2025 橙色，2024 青色，更早年份灰色',
+        help='默认近三年；2026 红色、2025 绿色、2024 黑色，更早年份灰色',
     )
     if not years:
         years = [all_years[0]]
     years = sorted(years)
 
 # ---------- KPI ----------
-latest_m = scope['latest']
-cur = fd.value_at(scope, latest_m, cat)
-mom = fd.metric_value(scope, latest_m, cat, 'mom')
-yoy = fd.metric_value(scope, latest_m, cat, 'yoy')
-prev_m = fd.shift_month(latest_m, -1)
-prev_y = fd.shift_month(latest_m, -12)
-prev_lv = fd.value_at(scope, prev_m, cat)
-prev_y_lv = fd.value_at(scope, prev_y, cat)
+latest_p = _latest_period(scope, freq)
+if latest_p is None:
+    st.error('该口径暂无完整季度数据。')
+    st.stop()
+unit_word = '月度' if freq == 'M' else '季度'
+same_word = '同月' if freq == 'M' else '同季'
+cur = fd.period_value(scope, latest_p, cat)
+mom = fd.metric_value(scope, latest_p, cat, 'mom')
+yoy = fd.metric_value(scope, latest_p, cat, 'yoy')
+prev_p = _shift_period(latest_p, freq, -1)
+prev_y_p = _shift_period(latest_p, freq, -12 if freq == 'M' else -4)
+prev_lv = fd.period_value(scope, prev_p, cat)
+prev_y_lv = fd.period_value(scope, prev_y_p, cat)
 
-y, latest_mo = map(int, latest_m.split('-'))
-cur_vals = [fd.value_at(scope, f'{y}-{m:02d}', cat) for m in range(1, latest_mo + 1)]
-prev_vals = [fd.value_at(scope, f'{y - 1}-{m:02d}', cat) for m in range(1, latest_mo + 1)]
+y = int(latest_p[:4])
+n_periods = _period_no(latest_p, freq)
+cur_vals = [fd.period_value(scope, _period_key(freq, y, i), cat)
+            for i in range(n_periods)]
+prev_vals = [fd.period_value(scope, _period_key(freq, y - 1, i), cat)
+             for i in range(n_periods)]
 if all(v is not None for v in cur_vals) and all(v is not None for v in prev_vals):
     ytd_cur, ytd_prev = sum(cur_vals), sum(prev_vals)
     ytd_yoy = fd.pct_change(ytd_cur, ytd_prev)
 else:
     ytd_cur = ytd_prev = ytd_yoy = None
 
+ytd_label = (f'{y}年1-{n_periods}月累计' if freq == 'M'
+             else f'{y}年Q1-Q{n_periods}累计')
+
 cards = [
-    _card(f'最新月产量 · {latest_m}', _fmt_level(cur), '吨',
+    _card(f'最新{unit_word}产量 · {latest_p}', _fmt_level(cur), '吨',
           _delta_line(mom, '环比', theme), theme),
-    _card('最新月环比', _fmt_pct(mom), '',
-          f'上月 {prev_m}：{_fmt_level(prev_lv)} 吨', theme,
+    _card(f'最新{unit_word}环比', _fmt_pct(mom), '',
+          f'上期 {prev_p}：{_fmt_level(prev_lv)} 吨', theme,
           value_color=_sign_color(mom, theme), line_is_note=True),
-    _card('最新月同比', _fmt_pct(yoy), '',
-          f'上年同月 {prev_y}：{_fmt_level(prev_y_lv)} 吨', theme,
+    _card(f'最新{unit_word}同比', _fmt_pct(yoy), '',
+          f'上年同期 {prev_y_p}：{_fmt_level(prev_y_lv)} 吨', theme,
           value_color=_sign_color(yoy, theme), line_is_note=True),
-    _card(f'{y}年1-{latest_mo}月累计', _fmt_level(ytd_cur), '吨',
+    _card(ytd_label, _fmt_level(ytd_cur), '吨',
           _delta_line(ytd_yoy, '累计同比', theme), theme),
 ]
 st.markdown('<div class="kpi-row">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
 
-# ---------- 图 1：同月对比 ----------
-st.markdown(f'#### 同月对比 · {metric_label}')
+# ---------- 图 1：同期对比 ----------
+st.markdown(f'#### {same_word}对比 · {freq_label}{metric_label}')
 _focus_year = max(years)
 _latest_year = int(scope['latest'][:4])
-_focus_month = int(scope['latest'][5:]) if _focus_year == _latest_year else 12
-if _focus_year == _latest_year:
-    st.caption(f'标签为 {_focus_year} 年 {_focus_month} 月的同月值；'
-               f'{_focus_year} 年折线只画到已公布月份。悬停可看所有年份同月数值。')
+if freq == 'Q':
+    _focus_idx = (_latest_quarter_idx(scope, _focus_year)
+                  if _focus_year == _latest_year else 3)
+    _focus_p = f'Q{max(_focus_idx, 0) + 1}'
+    _only_word = '只画到已公布季度'
 else:
-    st.caption(f'标签为 {_focus_year} 年 {_focus_month} 月的同月值；'
-               f'悬停可看所有年份同月数值。')
-st.plotly_chart(fig_seasonal(scope, cat, metric, years, theme),
+    _focus_month = int(scope['latest'][5:]) if _focus_year == _latest_year else 12
+    _focus_p = f'{_focus_month}月'
+    _only_word = '只画到已公布月份'
+if _focus_year == _latest_year:
+    st.caption(f'标签为 {_focus_year} 年 {_focus_p} 的{same_word}值；'
+               f'{_focus_year} 年折线{_only_word}。悬停可看所有年份同{same_word[1]}数值。')
+else:
+    st.caption(f'标签为 {_focus_year} 年 {_focus_p} 的{same_word}值；'
+               f'悬停可看所有年份同{same_word[1]}数值。')
+st.plotly_chart(fig_seasonal(scope, cat, metric, years, theme, freq),
                 width='stretch',
                 config={'displayModeBar': False, 'responsive': True})
 
-# ---------- 图 2：最新年份月度 ----------
-st.markdown(f'#### {y} 年月度{metric_label.replace("月度", "")}')
+# ---------- 图 2：最新年份月度/季度 ----------
+st.markdown(f'#### {y} 年{freq_label}{metric_label}')
 st.caption('红色 = 环比/同比上升，蓝色 = 下降；柱顶标签带正负号，颜色不是唯一线索。'
-           if metric != 'level' else '柱顶只标最新月份，其余月份看悬停或下方明细表。')
-st.plotly_chart(fig_monthly_bars(scope, cat, metric, y, theme),
+           if metric != 'level' else '柱顶只标最新一期，其余看悬停或下方明细表。')
+st.plotly_chart(fig_period_bars(scope, cat, metric, y, theme, freq),
                 width='stretch',
                 config={'displayModeBar': False, 'responsive': True})
 
 # ---------- 明细表 ----------
-st.markdown(f'#### {y} 年月度明细')
+period_col = '月份' if freq == 'M' else '季度'
+prev_col = '上年同月（吨）' if freq == 'M' else '上年同季（吨）'
+st.markdown(f'#### {y} 年{freq_label}明细')
 rows = []
-for m in range(1, latest_mo + 1):
-    month = f'{y}-{m:02d}'
-    lv = fd.value_at(scope, month, cat)
+for i in range(n_periods):
+    period = _period_key(freq, y, i)
+    lv = fd.period_value(scope, period, cat)
     if lv is None:
         continue
-    py_lv = fd.value_at(scope, f'{y - 1}-{m:02d}', cat)
+    py_period = _period_key(freq, y - 1, i)
+    py_lv = fd.period_value(scope, py_period, cat)
     rows.append({
-        '月份': month,
+        period_col: period,
         '产量（吨）': lv,
-        '环比（%）': fd.metric_value(scope, month, cat, 'mom'),
-        '同比（%）': fd.metric_value(scope, month, cat, 'yoy'),
-        '上年同月（吨）': py_lv,
+        '环比（%）': fd.metric_value(scope, period, cat, 'mom'),
+        '同比（%）': fd.metric_value(scope, period, cat, 'yoy'),
+        prev_col: py_lv,
         '同比增减（吨）': (lv - py_lv) if py_lv is not None else None,
     })
 df = pd.DataFrame(rows)
@@ -455,30 +545,35 @@ def _color_num(v):
     return f'color:{theme["muted"]}'
 
 
-styled = (df.style
-          .format({'产量（吨）': '{:,.2f}', '环比（%）': '{:+.2f}%',
-                   '同比（%）': '{:+.2f}%', '上年同月（吨）': '{:,.2f}',
-                   '同比增减（吨）': '{:+,.2f}'}, na_rep='—')
+fmt = {'产量（吨）': '{:,.2f}', '环比（%）': '{:+.2f}%',
+       '同比（%）': '{:+.2f}%', prev_col: '{:,.2f}',
+       '同比增减（吨）': '{:+,.2f}'}
+styled = (df.style.format(fmt, na_rep='—')
           .map(_color_num, subset=['环比（%）', '同比（%）', '同比增减（吨）']))
 st.dataframe(styled, width='stretch', hide_index=True)
 
 # 全历史 CSV
+if freq == 'M':
+    all_periods = list(scope['months'])
+else:
+    years_all = sorted({int(m[:4]) for m in scope['months']})
+    all_periods = [f'{yy}-Q{q}' for yy in years_all for q in range(1, 5)]
 all_rows = []
-for month in scope['months']:
-    lv = fd.value_at(scope, month, cat)
+for period in all_periods:
+    lv = fd.period_value(scope, period, cat)
     if lv is None:
         continue
     all_rows.append({
-        '月份': month,
+        period_col: period,
         '产量（吨）': lv,
-        '环比（%）': fd.metric_value(scope, month, cat, 'mom'),
-        '同比（%）': fd.metric_value(scope, month, cat, 'yoy'),
+        '环比（%）': fd.metric_value(scope, period, cat, 'mom'),
+        '同比（%）': fd.metric_value(scope, period, cat, 'yoy'),
     })
 csv = pd.DataFrame(all_rows).to_csv(index=False).encode('utf-8-sig')
 safe_name = re.sub(r'[\\/:*?"<>|]', '', f'{scope_label}_{cat_label}')
 st.download_button(
-    '⬇️ 下载当前口径 CSV（全部月份）', csv,
-    file_name=f'饲料_{safe_name}.csv', mime='text/csv',
+    f'⬇️ 下载当前口径 CSV（全部{period_col}）', csv,
+    file_name=f'饲料_{safe_name}_{freq_label}.csv', mime='text/csv',
 )
 
 if meta.get('warnings'):
@@ -488,7 +583,7 @@ with st.expander('口径说明与更新方式'):
     st.markdown(fd.NOTE_MD)
     st.markdown('**更新流程**')
     st.code('python update_feed_monthly.py\n'
-            'python build_feed_dashboard_data.py\n'
             '同步数据到GitHub.bat', language='bat')
+    st.caption('update_feed_monthly.py 会依次更新四份 Excel、重建 JSON 快照和公开页。')
     st.caption(f'快照生成时间：{meta.get("generated_at", "—")}'
                f'｜文件：{os.path.basename(fd.JSON_PATH)}')
