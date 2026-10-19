@@ -9,15 +9,11 @@ __pycache__/
 *.log
 *.md
 !requirements.txt
-!data/*.xlsx
-!data/*.json
+# 全部原始/聚合数据只留在本机，任何数据文件都不进仓库
+data/
 # 公开站点只发到 gh-pages 分支（sync_data.publish_pages 负责），不在 master 里存副本
 docs/
 ~$*
 
 # 看板公开页密码（本地文件，不进仓库）
 .dashboard_password
-
-# 看板数据快照（含聚合数据，不进公开仓库；本地保留）
-data/_wb_data.json
-data/feed_dashboard.json
