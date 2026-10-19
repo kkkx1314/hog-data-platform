@@ -29,14 +29,14 @@ st.set_page_config(page_title="饲料产量看板", page_icon="🌾", layout="wi
 FONT = 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif'
 
 # 年份固定色：2026 红 / 2025 绿 / 2024 黑（与社会供应压力看板口径一致），
-# 更早年份用中性灰阶做背景参照。颜色跟随年份实体，不随筛选重排。
-# 深色模式下“黑色”改为近白，否则在深底上不可见。
+# 2023 粉 / 2022 蓝 / 2021 黄 / 2020 紫（用户指定，实线、高对比）。
+# 颜色跟随年份实体，不随筛选重排。深色模式下用同色系亮阶。
 THEMES = {
     'light': {
         'bg': '#ffffff', 'text': '#0b0b0b', 'secondary': '#52514e',
         'muted': '#898781', 'grid': '#e1e0d9', 'axis': '#c3c2b7',
         'years': {2026: '#d2352f', 2025: '#0f8f45', 2024: '#0b0b0b',
-                  2023: '#6b6a64', 2022: '#898781', 2021: '#a8a69c', 2020: '#c3c2b7'},
+                  2023: '#d63384', 2022: '#1565c0', 2021: '#b8860b', 2020: '#6a1b9a'},
         'bar_level': '#d66b66', 'bar_level_latest': '#8f1712',
         'pos': '#d2352f', 'neg': '#2a78d6',
         'up_text': '#b3261e', 'down_text': '#1d4ed8',
@@ -47,7 +47,7 @@ THEMES = {
         'bg': '#0e1117', 'text': '#ffffff', 'secondary': '#c3c2b7',
         'muted': '#898781', 'grid': '#2c2c2a', 'axis': '#383835',
         'years': {2026: '#ef5b52', 2025: '#35c46e', 2024: '#f0f0f0',
-                  2023: '#6b6a64', 2022: '#898781', 2021: '#a8a69c', 2020: '#c3c2b7'},
+                  2023: '#ff79b0', 2022: '#64b5f6', 2021: '#ffd54f', 2020: '#c084fc'},
         'bar_level': '#b8534e', 'bar_level_latest': '#ff8a80',
         'pos': '#ef5b52', 'neg': '#3987e5',
         'up_text': '#ff8a80', 'down_text': '#82b1ff',
@@ -143,17 +143,18 @@ def _card(label, value, unit, line, theme, value_color=None, line_is_note=False)
 
 
 def _year_style(year):
-    # 2025 绿 / 2026 红在红绿色盲下区分度有限，用线型 + 数据点 + 直接标注
-    # 做第二重编码，颜色不是唯一线索。
+    # 2020-2023 按用户要求统一实线并提高对比度；
+    # 2026/2025/2024 仍用更粗线宽 + 数据点 + 直接标注做重点年区分
+    # （2025 虚线、2024 点线同时保留红绿色盲下的第二重编码）。
     return {
         2026: (3.0, True, 'solid'),
         2025: (2.4, True, 'dash'),
         2024: (2.2, True, 'dot'),
-        2023: (1.4, False, 'solid'),
-        2022: (1.4, False, 'dash'),
-        2021: (1.4, False, 'dot'),
-        2020: (1.4, False, 'dashdot'),
-    }.get(year, (1.4, False, 'solid'))
+        2023: (1.8, False, 'solid'),
+        2022: (1.8, False, 'solid'),
+        2021: (1.8, False, 'solid'),
+        2020: (1.8, False, 'solid'),
+    }.get(year, (1.8, False, 'solid'))
 
 
 def _period_keys(freq):
@@ -430,8 +431,8 @@ with st.container(border=True):
     default_years = [y for y in (2026, 2025, 2024) if y in all_years] or all_years[:3]
     years = c4.multiselect(
         '对比年份', all_years, default=default_years, key=f'feed_years_{scope_key}',
-        max_selections=6,
-        help='默认近三年；2026 红色、2025 绿色、2024 黑色，更早年份灰色',
+        max_selections=7,
+        help='默认近三年；2026 红、2025 绿、2024 黑、2023 粉、2022 蓝、2021 黄、2020 紫',
     )
     if not years:
         years = [all_years[0]]

@@ -30,6 +30,7 @@ TEMPLATE = r'''<!doctype html>
   --grid:#e1e0d9; --axis:#c3c2b7; --hair:rgba(11,11,11,.10);
   --accent:#0f8f45;
   --y26:#d2352f; --y25:#0f8f45; --y24:#0b0b0b;
+  --y23:#d63384; --y22:#1565c0; --y21:#b8860b; --y20:#6a1b9a;
   --bar-level:#d66b66; --bar-level-latest:#8f1712;
   --red:#d2352f; --blue:#2a78d6; --zero:#898781;
   --shadow:0 1px 2px rgba(11,11,11,.04),0 4px 16px rgba(11,11,11,.05);
@@ -41,6 +42,7 @@ TEMPLATE = r'''<!doctype html>
     --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
     --accent:#35c46e;
     --y26:#ef5b52; --y25:#35c46e; --y24:#f0f0f0;
+    --y23:#ff79b0; --y22:#64b5f6; --y21:#ffd54f; --y20:#c084fc;
     --bar-level:#b8534e; --bar-level-latest:#ff8a80;
     --red:#ef5b52; --blue:#3987e5; --zero:#898781;
     --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
@@ -52,6 +54,7 @@ TEMPLATE = r'''<!doctype html>
   --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
   --accent:#35c46e;
   --y26:#ef5b52; --y25:#35c46e; --y24:#f0f0f0;
+  --y23:#ff79b0; --y22:#64b5f6; --y21:#ffd54f; --y20:#c084fc;
   --bar-level:#b8534e; --bar-level-latest:#ff8a80;
   --red:#ef5b52; --blue:#3987e5; --zero:#898781;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.35);
@@ -311,14 +314,18 @@ function yearColor(y){
   if(y===2026) return 'var(--y26)';
   if(y===2025) return 'var(--y25)';
   if(y===2024) return 'var(--y24)';
-  const grays=['#6b6a64','#898781','#a8a69c','#c3c2b7'];
-  return grays[Math.abs(y)%grays.length];
+  if(y===2023) return 'var(--y23)';
+  if(y===2022) return 'var(--y22)';
+  if(y===2021) return 'var(--y21)';
+  if(y===2020) return 'var(--y20)';
+  return 'var(--ink-3)';
 }
 function yearDash(y){
-  if(y===2026) return '';
+  // 2020-2023 统一实线（用户指定）；2025/2024 保留虚线/点线，
+  // 作为红绿之外的第二重编码。
   if(y===2025) return '7 4';
   if(y===2024) return '2 3';
-  return '4 3';
+  return '';
 }
 function yearFocus(y){ return y===2026 || y===2025 || y===2024; }
 function fmtAxis(v, metric){
@@ -484,7 +491,7 @@ function drawLine(){
       d += `${started?'L':'M'}${x(i).toFixed(1)},${yv(v).toFixed(1)}`;
       started=true;
     });
-    const w = se.year===2026?3:(se.year===2025?2.4:(se.year===2024?2.2:1.5));
+    const w = se.year===2026?3:(se.year===2025?2.4:(se.year===2024?2.2:1.8));
     const dash=yearDash(se.year);
     svg+=`<path d="${d}" fill="none" style="stroke:${yearColor(se.year)};stroke-width:${w};${dash?`stroke-dasharray:${dash};`:''}stroke-linejoin:round;stroke-linecap:round"/>`;
     if(yearFocus(se.year)){
@@ -535,7 +542,7 @@ function drawLine(){
 
   // legend
   $('legend').innerHTML=state.years.slice().sort((a,b)=>b-a).map(y=>{
-    const style=`border-color:${yearColor(y)};border-top-style:${y===2026?'solid':(y===2025?'dashed':(y===2024?'dotted':'dashed'))}`;
+    const style=`border-color:${yearColor(y)};border-top-style:${y===2025?'dashed':(y===2024?'dotted':'solid')}`;
     return `<span class="li"><span class="sw" style="${style}"></span>${y}年</span>`;
   }).join('');
   $('lineHint').textContent = `标签为 ${focusYear} 年 ${freq==='M'?(labelIdx+1)+'月':'Q'+(labelIdx+1)} 的同期值；悬停查看所有年份同一期数值。`;

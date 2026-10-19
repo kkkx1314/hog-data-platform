@@ -363,9 +363,16 @@ if __name__ == '__main__':
         process(fname, cats, colmap, src_all)
     print('全部完成')
 
+    # 月度补齐后，顺带补齐已满 3 个月的季度（幂等，已是最新则跳过）
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    quarter_script = os.path.join(here, 'update_feed_quarterly.py')
+    print('\n== 补齐季度数据 ==')
+    rq = subprocess.run([sys.executable, quarter_script], cwd=here)
+    if rq.returncode:
+        print('[WARN] 季度数据补齐失败；可稍后单独运行 update_feed_quarterly.py')
+
     if '--no-dashboard' not in sys.argv:
-        import subprocess
-        here = os.path.dirname(os.path.abspath(__file__))
         script = os.path.join(here, 'build_feed_dashboard_data.py')
         print('\n== 生成线上看板快照 ==')
         r = subprocess.run([sys.executable, script], cwd=here)
