@@ -22,6 +22,7 @@ TEMPLATE = r'''<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
 <title>饲料产量看板 · 云南神农肉业</title>
 <style>
 :root{
@@ -158,6 +159,16 @@ tbody tr:hover{background:color-mix(in srgb,var(--ink-1) 4%,transparent)}
   .sel{max-width:none;width:100%}
   .tile .v{font-size:23px}
 }
+/* 访问密码遮罩 */
+.lock{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--plane);padding:20px}
+.lock[hidden]{display:none}
+.lockcard{background:var(--surface);border:1px solid var(--grid);border-radius:16px;padding:28px 26px;width:min(360px,100%);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.lockcard h2{font-size:18px;margin:0}
+.lockcard p{font-size:13px;color:var(--ink-2);margin:0 0 6px;line-height:1.5}
+.lockcard input{font:inherit;padding:10px 12px;border:1px solid var(--axis);border-radius:10px;background:var(--plane);color:var(--ink-1)}
+.lockcard input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.lockcard button{font:inherit;font-weight:700;padding:10px 12px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+.lockerr{font-size:12px;color:var(--red);min-height:16px}
 </style>
 </head>
 <body>
@@ -213,8 +224,72 @@ tbody tr:hover{background:color-mix(in srgb,var(--ink-1) 4%,transparent)}
 <div class="tt" id="tt"></div>
 </div>
 
+<div class="lock" id="lock" hidden>
+  <form class="lockcard" id="lockForm">
+    <h2>🔒 需要访问密码</h2>
+    <p>该看板包含内部数据，请输入访问密码后查看。</p>
+    <input id="lockPw" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+    <button type="submit">进入看板</button>
+    <div class="lockerr" id="lockErr"></div>
+  </form>
+</div>
+
 <script>
-const DATA = __DATA__;
+/* 数据在构建时用 AES-GCM 加密，密码只存在于本地 .dashboard_password。
+   浏览器输入密码后经 PBKDF2 派生密钥解密；同一标签页会话内免重复输入。 */
+const ENC = __ENC__;
+const PW_KEY = 'feed-dash-pw';
+
+function b64u8(s){
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+async function decPayload(enc, pw){
+  const km = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt:b64u8(enc.salt), iterations:enc.iter, hash:'SHA-256'},
+    km, {name:'AES-GCM', length:256}, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt(
+    {name:'AES-GCM', iv:b64u8(enc.iv)}, key, b64u8(enc.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+function askPassword(){
+  return new Promise(resolve => {
+    const lock=document.getElementById('lock');
+    const form=document.getElementById('lockForm');
+    const inp=document.getElementById('lockPw');
+    const err=document.getElementById('lockErr');
+    lock.hidden=false;
+    inp.value='';
+    err.textContent='';
+    setTimeout(()=>inp.focus(), 50);
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      err.textContent='正在验证…';
+      try{
+        const data=await decPayload(ENC, inp.value);
+        try{ sessionStorage.setItem(PW_KEY, inp.value); }catch(_){}
+        lock.hidden=true;
+        resolve(data);
+      }catch(_){
+        err.textContent='密码不正确，请重试';
+        inp.select();
+      }
+    };
+  });
+}
+async function unlockFeed(){
+  let cached=null;
+  try{ cached=sessionStorage.getItem(PW_KEY); }catch(_){}
+  if(cached){
+    try{ return await decPayload(ENC, cached); }
+    catch(_){ try{ sessionStorage.removeItem(PW_KEY); }catch(__){} }
+  }
+  return askPassword();
+}
+
+(async function bootFeed(){
+const DATA = await unlockFeed();
 const META = DATA.meta, SCOPES = DATA.scopes, ORDER = DATA.scope_order;
 const SCOPE_LABELS = {all:'全部饲料', hp:'配合饲料', ns:'浓缩饲料', tjj:'添加剂预混料'};
 const CAT_LABELS = {
@@ -729,6 +804,7 @@ initTheme();
 initNote();
 renderAll();
 $('csvBtn').addEventListener('click', downloadCsv);
+})();
 </script>
 </body>
 </html>
@@ -736,14 +812,17 @@ $('csvBtn').addEventListener('click', downloadCsv);
 
 
 def main():
+    import dashboard_crypto as dc
     data = fd.load_json()
-    payload = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
-    html = TEMPLATE.replace('__DATA__', payload)
+    enc = dc.enc_js(data)
+    html = TEMPLATE.replace('__ENC__', enc)
+    assert '__ENC__' not in html
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(OUT_PATH, 'w', encoding='utf-8') as f:
         f.write(html)
-    print(f'写入 {OUT_PATH} ({os.path.getsize(OUT_PATH):,} bytes)')
+    print(f'写入 {OUT_PATH} ({os.path.getsize(OUT_PATH):,} bytes，已加密)')
     print(f"数据截至 {data['meta']['latest']}；口径 {len(data['scope_order'])} 个")
+    print(f'访问密码：见 {dc.PW_FILE}')
 
 
 if __name__ == '__main__':

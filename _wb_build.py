@@ -51,15 +51,27 @@ def public_data(data):
     return out
 
 
-def build_html(data=None, state=None, tpl_path=None):
-    """state: {cal,gran,endDate,range,detail,embed,theme}；None/{} = 全部走模板默认。"""
+def build_html(data=None, state=None, tpl_path=None, encrypt=False, password=None):
+    """state: {cal,gran,endDate,range,detail,embed,theme}；None/{} = 全部走模板默认。
+
+    encrypt=True 只用于公开发布页：数据以 AES-GCM 密文嵌入，浏览器输密码后解密。
+    桌面版和 Streamlit 内嵌版保持明文。
+    """
     if data is None:
         data = load_data()
     tpl = open(tpl_path or TPL, encoding='utf-8').read()
-    for ph in ('__WB_STATE__', '__WB_DATA__', '__WB_HTMLATTR__', '__WB_BODYATTR__'):
+    for ph in ('__WB_STATE__', '__WB_DATA__', '__WB_ENC__',
+               '__WB_HTMLATTR__', '__WB_BODYATTR__'):
         assert ph in tpl, f'模板缺少 {ph} 占位符'
-    blob = json.dumps(scrub(data), ensure_ascii=False, separators=(',', ':'))
-    assert 'NaN' not in blob, '仍有 NaN 残留'
+    clean = scrub(data)
+    if encrypt:
+        import dashboard_crypto as dc
+        blob = 'null'
+        enc = dc.enc_js(clean, password)
+    else:
+        blob = json.dumps(clean, ensure_ascii=False, separators=(',', ':'))
+        enc = 'null'
+        assert 'NaN' not in blob, '仍有 NaN 残留'
     st = json.dumps(state, ensure_ascii=False) if state else 'null'
     # 外壳指定的 {embed, theme} 直接写进 <html>/<body> 标签，避免首屏闪一下再变
     sm = state or {}
@@ -69,6 +81,7 @@ def build_html(data=None, state=None, tpl_path=None):
     return (tpl.replace('__WB_HTMLATTR__', html_attr)
                .replace('__WB_BODYATTR__', body_attr)
                .replace('__WB_STATE__', st)
+               .replace('__WB_ENC__', enc)
                .replace('__WB_DATA__', blob))
 
 
@@ -104,13 +117,16 @@ def main():
         f.write(cloud_blob)
     print(f'云端副本 -> {CLOUD_SRC}  ({os.path.getsize(CLOUD_SRC)/1024/1024:.2f} MB, 已去明细)')
 
-    # GitHub Pages 首页：整份看板 + 数据都内嵌在一个文件里
-    pub_html = build_html(pub, state={'detail': False})
+    # GitHub Pages 首页：整份看板 + 数据都内嵌在一个文件里（数据加密，需密码）
+    pub_html = build_html(pub, state={'detail': False}, encrypt=True)
     os.makedirs(os.path.dirname(PUBLIC_HTML), exist_ok=True)
     with open(PUBLIC_HTML, 'w', encoding='utf-8') as f:
         f.write(pub_html)
+    import dashboard_crypto as dc
+    # 密文里不可能出现明文车号
     assert '云A' not in pub_html and 'SNRYCLGBD' not in pub_html, '公开版 HTML 仍带车号'
-    print(f'Pages 首页 -> {PUBLIC_HTML}  ({os.path.getsize(PUBLIC_HTML)/1024/1024:.2f} MB)')
+    print(f'Pages 首页 -> {PUBLIC_HTML}  ({os.path.getsize(PUBLIC_HTML)/1024/1024:.2f} MB，已加密)')
+    print(f'访问密码：见 {dc.PW_FILE}')
 
 
 if __name__ == '__main__':

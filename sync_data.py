@@ -64,7 +64,10 @@ def publish_pages() -> str:
                             capture_output=True, text=True).stdout.strip()
     with tempfile.TemporaryDirectory() as td:
         shutil.copy2(pub_html, Path(td) / "index.html")
-        files = ["index.html"]
+        # 禁止搜索引擎收录：各页 <meta name="robots"> 是主手段，robots.txt 作补充
+        (Path(td) / "robots.txt").write_text(
+            "User-agent: *\nDisallow: /\n", encoding="utf-8")
+        files = ["index.html", "robots.txt"]
         if feed_html.exists():
             (Path(td) / "feed").mkdir()
             shutil.copy2(feed_html, Path(td) / "feed" / "index.html")

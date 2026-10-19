@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
 <title>社会供应压力看板 · 云南神农肉业</title>
 <style>
 :root{
@@ -187,6 +188,16 @@ tbody tr:hover{background:color-mix(in srgb,var(--ink-1) 4%,transparent)}
   .wrap{padding:16px 12px 60px}
   .filters{position:static}
 }
+/* 访问密码遮罩 */
+.lock{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--plane);padding:20px}
+.lock[hidden]{display:none}
+.lockcard{background:var(--surface);border:1px solid var(--grid);border-radius:16px;padding:28px 26px;width:min(360px,100%);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.lockcard h2{font-size:18px;margin:0}
+.lockcard p{font-size:13px;color:var(--ink-2);margin:0 0 6px;line-height:1.5}
+.lockcard input{font:inherit;padding:10px 12px;border:1px solid var(--axis);border-radius:10px;background:var(--plane);color:var(--ink-1)}
+.lockcard input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.lockcard button{font:inherit;font-weight:700;padding:10px 12px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+.lockerr{font-size:12px;color:var(--red);min-height:16px}
 </style>
 </head>
 <body__WB_BODYATTR__>
@@ -293,12 +304,74 @@ tbody tr:hover{background:color-mix(in srgb,var(--ink-1) 4%,transparent)}
 </div>
 <div class="tt" id="tt"></div>
 
+<div class="lock" id="lock" hidden>
+  <form class="lockcard" id="lockForm">
+    <h2>🔒 需要访问密码</h2>
+    <p>该看板包含内部数据，请输入访问密码后查看。</p>
+    <input id="lockPw" type="password" autocomplete="current-password" placeholder="请输入密码" required>
+    <button type="submit">进入看板</button>
+    <div class="lockerr" id="lockErr"></div>
+  </form>
+</div>
+
 <script>
 /* __WB_STATE__ 由构建器替换: null = 全部走默认(最新日期 / 公历 / 日 / 显示明细)。
    Streamlit 外壳传 {cal, gran, endDate, range, detail, embed} —— embed=true 时
-   藏掉内嵌的筛选条, 并且把自身高度回传给外壳, 免得 iframe 里出现第二条滚动条。 */
+   藏掉内嵌的筛选条, 并且把自身高度回传给外壳, 免得 iframe 里出现第二条滚动条。
+
+   __WB_ENC__ 非 null 时是 AES-GCM 密文（公开页）；桌面版/Streamlit 内嵌版
+   为 null，DATA 直接是明文。 */
 const WB_STATE = __WB_STATE__;
-const DATA = __WB_DATA__;
+const WB_ENC = __WB_ENC__;
+let DATA = null;
+const WB_PW_KEY = 'wb-dash-pw';
+
+function b64u8(s){ return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+async function decPayload(enc, pw){
+  const km = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    {name:'PBKDF2', salt:b64u8(enc.salt), iterations:enc.iter, hash:'SHA-256'},
+    km, {name:'AES-GCM', length:256}, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt(
+    {name:'AES-GCM', iv:b64u8(enc.iv)}, key, b64u8(enc.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+function askPassword(){
+  return new Promise(resolve => {
+    const lock=document.getElementById('lock');
+    const form=document.getElementById('lockForm');
+    const inp=document.getElementById('lockPw');
+    const err=document.getElementById('lockErr');
+    lock.hidden=false;
+    inp.value='';
+    err.textContent='';
+    setTimeout(()=>inp.focus(), 50);
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      err.textContent='正在验证…';
+      try{
+        const data=await decPayload(WB_ENC, inp.value);
+        try{ sessionStorage.setItem(WB_PW_KEY, inp.value); }catch(_){}
+        lock.hidden=true;
+        resolve(data);
+      }catch(_){
+        err.textContent='密码不正确，请重试';
+        inp.select();
+      }
+    };
+  });
+}
+async function wbUnlock(){
+  if(!WB_ENC) return __WB_DATA__;
+  let cached=null;
+  try{ cached=sessionStorage.getItem(WB_PW_KEY); }catch(_){}
+  if(cached){
+    try{ return await decPayload(WB_ENC, cached); }
+    catch(_){ try{ sessionStorage.removeItem(WB_PW_KEY); }catch(__){} }
+  }
+  return askPassword();
+}
 </script>
 <script>
 /* ============================================================
@@ -675,8 +748,10 @@ function buildTable(host,cols,rows){
 </script>
 <script>
 /* ============================================================
-   看板逻辑
+   看板逻辑（等密码解密完成后再初始化）
    ============================================================ */
+(async function bootWB(){
+DATA = await wbUnlock();
 const P=DATA.periods, META=DATA.meta, AUDIT=DATA.audit, BINS=DATA.bin_labels;
 const LUNAR_DAY=DATA.lunar_of_day||{};
 const ST=WB_STATE||{};
@@ -1296,6 +1371,7 @@ setTimeout(redrawAll, 400);
 [80,400,1200].forEach(ms=>setTimeout(reportHeight,ms));
 addEventListener('resize',()=>setTimeout(reportHeight,120));
 new ResizeObserver(()=>reportHeight()).observe(document.body);
+})();
 </script>
 </body>
 </html>
