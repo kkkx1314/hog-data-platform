@@ -6,6 +6,7 @@ from typing import Any
 import base64
 import datetime
 import hashlib
+import os
 import re
 
 import plotly.io as pio
@@ -22,11 +23,38 @@ try:
 except Exception:
     LunarDate = None
 
+from cloud_data_sync import get_github_token, sync_from_private_repo
+
+# set_page_config 必须是第一个 Streamlit 命令；放到这里才能在上方做数据同步时用 spinner
+st.set_page_config(
+    page_title="生猪现货-期货综合分析平台",
+    layout="wide",
+    menu_items={"About": "生猪市场研究平台 · 涌益咨询数据 · 内部使用"},
+)
+
 
 # ── 数据目录：优先本地平台数据目录，其次项目内data目录（GitHub同步用）──
-_LOCAL_DATA = Path(r"D:\CC\Desktop\平台数据")
+_LOCAL_DATA = Path(os.environ.get("HOG_PLATFORM_DATA_DIR", r"D:\CC\Desktop\平台数据"))
 _REPO_DATA = Path(__file__).parent / "data"
 _REPO_DATA.mkdir(exist_ok=True)
+
+# ── Streamlit Cloud：本机平台目录不存在时，从私有仓库拉取数据 ──
+# 公开仓库只放代码；原始 Excel 在 kkkx1314/swine-dashboard，靠 GITHUB_TOKEN 读取。
+_DATA_SYNC_INFO = ""
+_DATA_SYNC_ERROR = ""
+if not _LOCAL_DATA.exists():
+    _token = get_github_token()
+    if _token:
+        try:
+            with st.spinner("正在从私有数据仓库同步最新数据…"):
+                _sync = sync_from_private_repo(_REPO_DATA, _token)
+            if _sync.get("downloaded"):
+                _DATA_SYNC_INFO = f"已从私有数据仓库同步 {_sync['downloaded']} 个文件"
+        except Exception as _exc:
+            _DATA_SYNC_ERROR = str(_exc)
+    else:
+        _DATA_SYNC_ERROR = "未配置 GITHUB_TOKEN，无法从私有数据仓库同步"
+
 PLATFORM_DATA_DIR = _LOCAL_DATA if _LOCAL_DATA.exists() else _REPO_DATA
 
 # ── 自动识别最新数据文件 ──
@@ -6196,8 +6224,10 @@ def _resolve_data_path(pattern: str, label: str) -> str:
     if available:
         names = ", ".join(f.name[:30] for f in available[:10])
         st.sidebar.error(f"未找到{label}数据，可用文件: {names}")
+    elif _DATA_SYNC_ERROR:
+        st.sidebar.error(f"数据目录为空：{_DATA_SYNC_ERROR}")
     else:
-        st.sidebar.error(f"数据目录为空，请检查平台数据路径")
+        st.sidebar.error("数据目录为空，请检查平台数据路径")
     return ""
 
 
@@ -8110,11 +8140,6 @@ def _show_raw_excel_preview(file_path: str) -> None:
 # -----------------------------
 # 主界面
 # -----------------------------
-st.set_page_config(
-    page_title="生猪现货-期货综合分析平台",
-    layout="wide",
-    menu_items={"About": "生猪市场研究平台 · 涌益咨询数据 · 内部使用"},
-)
 inject_css()
 
 # 顶部导语
@@ -8145,6 +8170,10 @@ with st.sidebar:
     )
     st.markdown("---")
     st.caption("使用说明：在左侧选择模块后，对应数据源路径与筛选条件将出现在下方。各模块顶部会生成智能摘要。")
+    if _DATA_SYNC_INFO:
+        st.caption(f"☁️ {_DATA_SYNC_INFO}")
+    if _DATA_SYNC_ERROR:
+        st.caption(f"⚠️ {_DATA_SYNC_ERROR}")
     if st.sidebar.button("🔄 清除缓存并刷新", use_container_width=True, help="数据文件更新后，点击此按钮清除缓存并重新加载最新数据"):
         st.cache_data.clear()
         st.rerun()

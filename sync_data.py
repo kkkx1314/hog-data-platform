@@ -2,7 +2,8 @@
 一键同步：平台数据 + 调运数据 -> data/（仅保留本机），并刷新两个公开看板。
 双击 同步数据到GitHub.bat 即可运行
 
-数据文件不再进 Git（data/ 已 gitignore）；公开站点仍通过 gh-pages 发布。
+数据文件不再进公开 Git（data/ 已 gitignore），改为推到私有仓库 swine-dashboard，
+Streamlit Cloud 启动时凭 GITHUB_TOKEN 从那里取数；公开站点仍通过 gh-pages 发布。
 调运数据策略：找到最新的二次去重文件，将其中新日期追加到全量合并文件，
 生成一个日期范围更大的统一全量文件。
 """
@@ -57,7 +58,7 @@ def publish_pages() -> str:
     pub_html = DATA.parent / "docs" / "index.html"
     feed_html = DATA.parent / "docs" / "feed" / "index.html"
     if not pub_html.exists():
-        return "跳过（没有 docs/index.html，先跑一次「更新看板数据.bat」）"
+        return "跳过（没有 docs/index.html，先跑一次「更新看板.bat」）"
     cfg = lambda k, d: (subprocess.run(["git", "config", k], cwd=str(BASE),
                                        capture_output=True, text=True).stdout.strip() or d)
     name, email = cfg("user.name", "sync"), cfg("user.email", "sync@local")
@@ -253,13 +254,21 @@ if not deleted_files:
 else:
     print(f"  清理完成 ({len(deleted_files)} 个旧文件)")
 
-# [4/6] 数据不再入库
+# [4/6] 数据推到私有仓库（Streamlit Cloud 从这里取数）
 print()
-print("[4/6] 数据仅保留本机（data/ 已 gitignore），跳过 Git 提交")
+print("[4/6] 推送数据到私有仓库...")
+private_ok = False
+try:
+    from cloud_data_sync import push_to_private_repo
+    print(f"  {push_to_private_repo(DATA)}")
+    private_ok = True
+except Exception as e:
+    print(f"  [WARN] 私有仓库推送失败: {e}")
+    print("  本机数据已更新；云端会在下次推送成功后拿到新数据")
 
-# [5/6] 数据不再推 master
+# [5/6] 公开仓库 master 不含任何数据
 print()
-print("[5/6] 跳过推送（数据不再进 master；公开页在 [6/6] 单独发 gh-pages）")
+print("[5/6] 跳过公开仓库（数据不进 master；公开页在 [6/6] 单独发 gh-pages）")
 
 # [6/6] 刷新公开站点
 print()
@@ -306,7 +315,7 @@ if deleted_files:
     print(f"  [已清理] {len(deleted_files)} 个旧文件")
 
 print()
-print(f"  [Git] 数据未上传（仅保留本机 data/）")
+print(f"  [Git] 公开仓库不含数据；私有仓库{'已更新' if private_ok else '未更新（见上方 WARN）'}")
 
 print()
 print("  [公开站点] " + ("https://kkkx1314.github.io/hog-data-platform/"
