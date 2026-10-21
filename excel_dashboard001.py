@@ -53,7 +53,10 @@ if not _LOCAL_DATA.exists():
         except Exception as _exc:
             _DATA_SYNC_ERROR = str(_exc)
     else:
-        _DATA_SYNC_ERROR = "未配置 GITHUB_TOKEN，无法从私有数据仓库同步"
+        _DATA_SYNC_ERROR = (
+            "未配置 GITHUB_TOKEN：请到 Streamlit Cloud 应用 "
+            "Settings → Secrets 添加 GITHUB_TOKEN（私有仓库 swine-dashboard 只读）"
+        )
 
 PLATFORM_DATA_DIR = _LOCAL_DATA if _LOCAL_DATA.exists() else _REPO_DATA
 
