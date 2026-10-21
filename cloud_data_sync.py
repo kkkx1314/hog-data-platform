@@ -33,15 +33,43 @@ SYNC_STATE = ".data_sync_state.json"
 SYNC_TTL_SECONDS = 6 * 3600
 
 
+def _token_from_mapping(obj) -> str:
+    """在任意层级的 secrets 结构里找 PAT 值（键名不限）。"""
+    if isinstance(obj, str):
+        value = obj.strip()
+        return value if value.startswith(("github_pat_", "ghp_")) else ""
+    if isinstance(obj, dict):
+        for value in obj.values():
+            found = _token_from_mapping(value)
+            if found:
+                return found
+    return ""
+
+
 def get_github_token() -> str:
-    """优先环境变量（本机测试/兼容旧部署），其次 Streamlit secrets。"""
+    """优先环境变量（本机测试/兼容旧部署），其次 Streamlit secrets。
+
+    Secrets 的键名不强制叫 GITHUB_TOKEN：token 名叫 pig-dashboard 时，
+    直接写 pig-dashboard = "github_pat_..." 也能读到。
+    """
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     if token:
         return token
     try:
         import streamlit as st
 
-        return str(st.secrets.get("GITHUB_TOKEN", "")).strip()
+        secrets = st.secrets
+    except Exception:
+        return ""
+    for key in ("GITHUB_TOKEN", "github_token", "pig-dashboard", "pig_dashboard"):
+        try:
+            value = secrets.get(key, "")
+        except Exception:
+            value = ""
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    try:
+        return _token_from_mapping(dict(secrets))
     except Exception:
         return ""
 
