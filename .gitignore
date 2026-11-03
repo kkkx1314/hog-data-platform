@@ -20,3 +20,11 @@ docs/
 
 # 看板公开页密码（本地文件，不进仓库）
 .dashboard_password
+
+# 上市公司专项_财务指标：上市公司的公开财报汇总（非敏感），随代码进仓库供 Streamlit Cloud 单独应用读取
+!上市公司专项_财务指标/data/
+!上市公司专项_财务指标/data/indicators_single.csv
+!上市公司专项_财务指标/data/indicators_cum.csv
+!上市公司专项_财务指标/data/assets_five.csv
+!上市公司专项_财务指标/data/kf_nonrecurring.csv
+!上市公司专项_财务指标/data/employees.csv
