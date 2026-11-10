@@ -196,7 +196,7 @@ footer b{color:var(--ink2);font-weight:600}
         <label for="assetPeriod">对比报告期</label>
         <select id="assetPeriod"></select>
       </div>
-      <div class="note" style="align-self:center;max-width:520px">全部公司在同一报告期的资产结构对比，按五项合计降序；金额单位：<b>亿元</b>。空白表示未披露。</div>
+      <div class="note" style="align-self:center;max-width:560px">全部公司同报告期资产结构对比；下方可按单项资产查看单家或全部公司合计的历年变化。金额单位：<b>亿元</b>，空白表示未披露。</div>
     </div>
     <div class="card chart-card">
       <div class="chart-head">
@@ -211,6 +211,49 @@ footer b{color:var(--ink2);font-weight:600}
     <details id="assetAllDetails">
       <summary>查看全部公司资产数据表</summary>
       <div class="table-scroll" id="assetAllTable"></div>
+    </details>
+
+    <div class="section-head">
+      <div>
+        <h2>单项资产 · 历年</h2>
+        <p>选择一项资产，查看单家公司或全部公司合计的历年变化；合计按固定样本或逐期样本加总</p>
+      </div>
+    </div>
+    <div class="toolbar card">
+      <div class="control">
+        <label for="assetItem">资产项目</label>
+        <select id="assetItem"></select>
+      </div>
+      <div class="control">
+        <label for="assetItemCompany">公司 / 合计</label>
+        <select id="assetItemCompany"></select>
+      </div>
+      <div class="control" id="assetItemBasisWrap">
+        <label>合计口径</label>
+        <div class="seg" id="assetItemBasisSeg" role="group" aria-label="合计口径">
+          <button type="button" data-val="balanced" class="active">整段剔除</button>
+          <button type="button" data-val="period">逐期剔除</button>
+        </div>
+      </div>
+      <div class="note" id="assetItemBasisNote" style="align-self:center;max-width:430px">整段剔除：该项任一期未披露（含报表未列示），公司整家剔除，保证历年可比；逐期剔除：每期只加总当期已披露公司。</div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head">
+        <div>
+          <h2 id="assetItemTitle">固定资产 · 历年</h2>
+          <p id="assetItemSub">单位：亿元 · 报告期截面值（非年度累加）</p>
+        </div>
+        <div class="note" id="assetItemValue"></div>
+      </div>
+      <div id="assetItemChart" class="chart"></div>
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:10px">
+        <div class="note" id="assetItemExclNote" style="margin-bottom:6px"></div>
+        <div class="table-scroll" id="assetItemExclTable" style="max-height:240px"></div>
+      </div>
+    </div>
+    <details id="assetItemDetails">
+      <summary>查看逐期数据表</summary>
+      <div class="table-scroll" id="assetItemTable"></div>
     </details>
 
     <div class="section-head">
@@ -369,6 +412,13 @@ const INDS = DATA.indicators;
 const IND = Object.fromEntries(INDS.map(x => [x.name, x]));
 const ASSET_ITEMS = DATA.assetItems;          // [投资性房地产, 固定资产, 在建工程, 生产性生物资产, 存货]
 const ASSET_ROWS = DATA.assets;               // company -> 27 × [inv, fix, con, bio, invty, totalAssets] | null
+const ASSET_STACK = [
+  {name: '固定资产', idx: 1},
+  {name: '存货', idx: 4},
+  {name: '在建工程', idx: 2},
+  {name: '生产性生物资产', idx: 3},
+  {name: '投资性房地产', idx: 0}
+];
 const FONT = 'system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif';
 
 const state = {
@@ -377,6 +427,9 @@ const state = {
   scale: 'unified',
   assetPeriod: PERIODS[PERIODS.length - 1],
   assetCompany: COMPANIES[0],
+  assetItem: '固定资产',
+  assetItemCompany: 'ALL',
+  assetItemBasis: 'balanced',
   snapCaliber: '单季',
   snapPeriod: PERIODS[PERIODS.length - 1]
 };
@@ -539,6 +592,7 @@ function bindSeg(id, key, after){
 bindSeg('calSeg', 'caliber', () => updateTrend());
 bindSeg('scaleSeg', 'scale', () => updateTrend());
 bindSeg('snapCalSeg', 'snapCaliber', () => renderSnapshot());
+bindSeg('assetItemBasisSeg', 'assetItemBasis', () => updateAssetItem());
 
 // ---------------------------------------------------------------- selects
 function fillSelect(el, values, selected){
@@ -577,9 +631,24 @@ function fillAllSelects(){
   fillSelect(document.getElementById('snapPeriod'), PERIODS.slice().reverse(), state.snapPeriod);
   fillSelect(document.getElementById('assetPeriod'), PERIODS.slice().reverse(), state.assetPeriod);
   fillSelect(document.getElementById('assetCompany'), COMPANIES, state.assetCompany);
+  fillSelect(document.getElementById('assetItem'), ASSET_STACK.map(x => x.name), state.assetItem);
+  const itemComp = document.getElementById('assetItemCompany');
+  itemComp.innerHTML = '';
+  const allOpt = document.createElement('option');
+  allOpt.value = 'ALL'; allOpt.textContent = '全部公司合计';
+  itemComp.appendChild(allOpt);
+  COMPANIES.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    if (c === state.assetItemCompany) o.selected = true;
+    itemComp.appendChild(o);
+  });
+  itemComp.value = state.assetItemCompany;
   document.getElementById('snapPeriod').addEventListener('change', e => { state.snapPeriod = e.target.value; renderSnapshot(); });
   document.getElementById('assetPeriod').addEventListener('change', e => { state.assetPeriod = e.target.value; updateAssetAll(); });
   document.getElementById('assetCompany').addEventListener('change', e => { state.assetCompany = e.target.value; updateAssetCompany(); });
+  document.getElementById('assetItem').addEventListener('change', e => { state.assetItem = e.target.value; updateAssetItem(); });
+  itemComp.addEventListener('change', e => { state.assetItemCompany = e.target.value; updateAssetItem(); });
 }
 fillAllSelects();
 
@@ -688,19 +757,13 @@ function renderTrendTable(){
 }
 
 // ---------------------------------------------------------------- assets
-const ASSET_STACK = [
-  {name: '固定资产', idx: 1},
-  {name: '存货', idx: 4},
-  {name: '在建工程', idx: 2},
-  {name: '生产性生物资产', idx: 3},
-  {name: '投资性房地产', idx: 0}
-];
-let assetAllChart = null, assetCompChart = null, assetShareChart = null;
+let assetAllChart = null, assetCompChart = null, assetShareChart = null, assetItemChart = null;
 function ensureAssets(){
   if (assetAllChart) return;
   assetAllChart = echarts.init(document.getElementById('assetAll'), null, {renderer: 'canvas'});
   assetCompChart = echarts.init(document.getElementById('assetComp'), null, {renderer: 'canvas'});
   assetShareChart = echarts.init(document.getElementById('assetShare'), null, {renderer: 'canvas'});
+  assetItemChart = echarts.init(document.getElementById('assetItemChart'), null, {renderer: 'canvas'});
 }
 function assetRow(company, period){
   const idx = PERIODS.indexOf(period);
@@ -718,8 +781,10 @@ function updateAssets(){
   ensureAssets();
   assetCompChart.resize();
   assetShareChart.resize();
+  assetItemChart.resize();
   updateAssetAll();
   updateAssetCompany();
+  updateAssetItem();
 }
 function updateAssetAll(){
   const p = P(), per = state.assetPeriod;
@@ -948,6 +1013,193 @@ function renderAssetCompTable(company, rows){
   document.getElementById('assetCompTable').innerHTML = h;
 }
 
+// ---------------------------------------------------------------- single asset history
+function assetItemValue(company, pi, idx){
+  const r = ASSET_ROWS[company] && ASSET_ROWS[company][pi];
+  return r ? r[idx] : null;
+}
+function assetItemData(){
+  const meta = ASSET_STACK.find(x => x.name === state.assetItem) || ASSET_STACK[0];
+  const idx = meta.idx;
+  const isAll = state.assetItemCompany === 'ALL';
+  if (!isAll) {
+    const company = state.assetItemCompany;
+    const data = PERIODS.map((per, i) => {
+      const v = assetItemValue(company, i, idx);
+      return {per: per, value: NUL(v) ? null : v, n: NUL(v) ? 0 : 1, excluded: []};
+    });
+    return {idx: idx, isAll: false, data: data, eligible: [company], excluded: []};
+  }
+  const balanced = state.assetItemBasis === 'balanced';
+  const eligible = balanced
+    ? COMPANIES.filter(c => PERIODS.every((_, i) => !NUL(assetItemValue(c, i, idx))))
+    : COMPANIES.slice();
+  const fixedExcluded = COMPANIES.filter(c => !eligible.includes(c));
+  const data = PERIODS.map((per, i) => {
+    const inc = [];
+    let sum = 0;
+    eligible.forEach(c => {
+      const v = assetItemValue(c, i, idx);
+      if (!NUL(v)) { inc.push(c); sum += v; }
+    });
+    const excluded = balanced ? fixedExcluded : COMPANIES.filter(c => !inc.includes(c));
+    return {per: per, value: inc.length ? sum : null, n: inc.length, excluded: excluded};
+  });
+  return {idx: idx, isAll: true, data: data, eligible: eligible, excluded: fixedExcluded};
+}
+function missingPeriodsText(miss){
+  if (!miss.length) return '—';
+  if (miss.length === PERIODS.length) return '全部报告期';
+  if (miss.length > 12) {
+    const have = PERIODS.filter(per => !miss.includes(per));
+    return '共 ' + miss.length + ' 期缺失（有值：' + have.join('、') + '）';
+  }
+  return miss.join('、');
+}
+function renderAssetItemExcl(res){
+  const isAll = res.isAll;
+  let note = '', h = '';
+  if (!isAll) {
+    const missing = res.data.filter(d => NUL(d.value));
+    note = missing.length
+      ? state.assetItemCompany + ' 在 ' + missing.length + ' 期未披露该项资产，图中为空白。'
+      : state.assetItemCompany + ' 各期均已披露该项资产。';
+    h = '<table class="data-table"><thead><tr><th class="sticky-col">报告期</th><th>状态</th></tr></thead><tbody>' +
+        (missing.length
+          ? missing.map(d => '<tr><th class="sticky-col">' + d.per + '</th><td>未披露</td></tr>').join('')
+          : '<tr><td colspan="2" style="text-align:left;color:var(--muted)">各期均有披露</td></tr>') +
+        '</tbody></table>';
+  } else if (state.assetItemBasis === 'balanced') {
+    note = '整段剔除：' + res.eligible.length + ' 家纳入，' + res.excluded.length + ' 家剔除（该项任一期未披露或报表未列示即整家剔除）。合计为固定样本，历年可比。';
+    if (res.excluded.length) {
+      h = '<table class="data-table"><thead><tr><th class="sticky-col">公司</th><th>未披露期数</th><th>未披露报告期</th></tr></thead><tbody>' +
+          res.excluded.map(c => {
+            const miss = PERIODS.filter((_, i) => NUL(assetItemValue(c, i, res.idx)));
+            return '<tr><th class="sticky-col">' + esc(c) + '</th><td>' + miss.length + '</td><td style="text-align:left;white-space:normal">' +
+                   missingPeriodsText(miss) + '</td></tr>';
+          }).join('') + '</tbody></table>';
+    } else {
+      h = '<div class="empty" style="padding:18px">全部 ' + COMPANIES.length + ' 家公司均满足平衡样本条件。</div>';
+    }
+  } else {
+    const rows = res.data.filter(d => d.excluded.length);
+    const totalEx = rows.reduce((s, d) => s + d.excluded.length, 0);
+    note = rows.length
+      ? '逐期剔除：共 ' + rows.length + ' 期存在剔除，合计 ' + totalEx + ' 个公司-期；每期只加总当期已披露公司，样本家数随期变化。'
+      : '逐期剔除：各期均为全部 ' + COMPANIES.length + ' 家披露。';
+    h = rows.length
+      ? '<table class="data-table"><thead><tr><th class="sticky-col">报告期</th><th>合计(亿元)</th><th>纳入家数</th><th>剔除公司</th></tr></thead><tbody>' +
+        rows.map(d => '<tr><th class="sticky-col">' + d.per + '</th><td>' + fmtYi(d.value) + '</td><td>' + d.n + '</td>' +
+                      '<td style="text-align:left;white-space:normal">' + esc(d.excluded.join('、')) + '</td></tr>').join('') +
+        '</tbody></table>'
+      : '<div class="empty" style="padding:18px">各期均为全部 ' + COMPANIES.length + ' 家披露，无剔除。</div>';
+  }
+  document.getElementById('assetItemExclNote').textContent = note;
+  document.getElementById('assetItemExclTable').innerHTML = h;
+}
+function renderAssetItemTable(res){
+  const isAll = res.isAll;
+  let h = '<table class="data-table"><thead><tr><th class="sticky-col">报告期</th><th>金额(亿元)</th>' +
+          (isAll ? '<th>纳入家数</th><th>剔除公司</th>' : '<th>状态</th>') + '</tr></thead><tbody>';
+  res.data.forEach(d => {
+    h += '<tr><th class="sticky-col">' + d.per + '</th><td>' + fmtYi(d.value) + '</td>';
+    if (isAll) {
+      const ex = state.assetItemBasis === 'balanced'
+        ? (res.excluded.length ? '固定剔除 ' + res.excluded.length + ' 家' : '全部纳入')
+        : (d.excluded.length ? d.excluded.join('、') : '—');
+      h += '<td>' + d.n + '</td><td style="text-align:left;white-space:normal">' + esc(ex) + '</td>';
+    } else {
+      h += '<td>' + (NUL(d.value) ? '未披露' : '已披露') + '</td>';
+    }
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('assetItemTable').innerHTML = h;
+}
+function updateAssetItem(){
+  const p = P(), res = assetItemData(), data = res.data;
+  const isAll = res.isAll;
+  document.getElementById('assetItemBasisWrap').style.display = isAll ? '' : 'none';
+  document.getElementById('assetItemBasisNote').style.display = isAll ? '' : 'none';
+  document.getElementById('assetItemTitle').textContent = state.assetItem + ' · ' + (isAll ? '全部公司合计' : state.assetItemCompany);
+  let sub = '单位：亿元 · 报告期截面值（非年度累加）';
+  if (isAll) {
+    sub += state.assetItemBasis === 'balanced'
+      ? ' · 整段剔除，固定样本 ' + res.eligible.length + ' 家'
+      : ' · 逐期剔除，样本家数随期变化';
+  }
+  document.getElementById('assetItemSub').textContent = sub;
+
+  const latest = data.slice().reverse().find(d => !NUL(d.value));
+  let valTxt = '所选范围暂无数据';
+  if (latest) {
+    valTxt = latest.per + ' · ' + fmtYi(latest.value) + ' 亿元';
+    if (isAll) valTxt += ' · 纳入 ' + latest.n + ' 家';
+  }
+  document.getElementById('assetItemValue').textContent = valTxt;
+
+  const stackIdx = Math.max(0, ASSET_STACK.findIndex(x => x.name === state.assetItem));
+  const color = p.asset[stackIdx];
+  const option = {
+    animationDuration: 260,
+    textStyle: {fontFamily: FONT},
+    grid: {left: 64, right: 22, top: 20, bottom: 30},
+    tooltip: Object.assign(tooltipBase(p), {
+      trigger: 'axis',
+      axisPointer: {type: 'shadow', shadowStyle: {color: p.wash || 'rgba(128,128,128,.08)'}},
+      confine: true,
+      formatter: ps => {
+        const i = ps[0].dataIndex, d = data[i];
+        let s = '<div style="font-weight:600;margin-bottom:4px">' + esc(d.per) + '</div>';
+        if (NUL(d.value)) return s + '<div style="color:' + p.muted + '">未披露</div>';
+        s += '<div style="display:flex;justify-content:space-between;gap:24px">' +
+             '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + color + ';margin-right:6px"></i>' +
+             esc(state.assetItem) + '</span><b>' + fmtYi(d.value) + ' 亿元</b></div>';
+        if (isAll) {
+          s += '<div style="display:flex;justify-content:space-between;gap:24px"><span>纳入</span><b>' + d.n + ' 家</b></div>';
+          if (state.assetItemBasis === 'period' && d.excluded.length) {
+            s += '<div style="max-width:320px;white-space:normal;color:' + p.ink2 + ';margin-top:2px">剔除：' + esc(d.excluded.join('、')) + '</div>';
+          } else if (state.assetItemBasis === 'balanced' && res.excluded.length) {
+            s += '<div style="color:' + p.ink2 + ';margin-top:2px">固定样本，另剔除 ' + res.excluded.length + ' 家（见下表）</div>';
+          }
+        } else {
+          s += '<div style="color:' + p.ink2 + '">单家公司</div>';
+        }
+        return s;
+      }
+    }),
+    xAxis: {
+      type: 'category', data: PERIODS, boundaryGap: true,
+      axisLine: {lineStyle: {color: p.axis}}, axisTick: {show: false},
+      axisLabel: {
+        color: p.muted, fontSize: 9, margin: 6, hideOverlap: true,
+        interval: idx => PERIODS[idx].endsWith('Q1'),
+        formatter: v => v.slice(0, 4)
+      }
+    },
+    yAxis: {
+      type: 'value', min: 0,
+      axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 10, formatter: v => Number(v).toLocaleString('zh-CN', {maximumFractionDigits: v >= 10 ? 0 : 2})},
+      splitLine: {lineStyle: {color: p.grid, width: 1}}
+    },
+    series: [{
+      name: state.assetItem, type: 'bar', data: data.map(d => d.value), barMaxWidth: 26,
+      itemStyle: {color: color, borderRadius: [4, 4, 0, 0]},
+      emphasis: {itemStyle: {color: color}}
+    }]
+  };
+  if (!latest) {
+    option.title = {
+      text: '所选范围暂无该项资产数据', left: 'center', top: 'middle',
+      textStyle: {color: p.muted, fontSize: 13, fontWeight: 400, fontFamily: FONT}
+    };
+  }
+  assetItemChart.setOption(option, true);
+  renderAssetItemExcl(res);
+  renderAssetItemTable(res);
+}
+
 // ---------------------------------------------------------------- snapshot
 function renderSnapshot(){
   const p = P(), pidx = PERIODS.indexOf(state.snapPeriod);
@@ -1054,7 +1306,7 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     trendCharts.forEach(ch => ch.resize());
-    if (assetAllChart) { assetAllChart.resize(); assetCompChart.resize(); assetShareChart.resize(); }
+    if (assetAllChart) { assetAllChart.resize(); assetCompChart.resize(); assetShareChart.resize(); assetItemChart.resize(); }
   }, 120);
 });
 

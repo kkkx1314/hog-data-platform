@@ -302,6 +302,121 @@ with tab3:
             st.caption(f"{sel_ap} 期末；按五项合计从大到小排列（图中自上而下）。")
 
         st.markdown("---")
+        st.subheader("单项资产 · 历年")
+        st.caption("全历史 2020Q1–2026Q3，不受左侧报告期区间影响；单位：亿元。"
+                   "合计逐期剔除未披露公司，并在下方标注；报表未列示该项也按未披露处理。")
+        item_order = ["固定资产", "存货", "在建工程", "生产性生物资产", "投资性房地产"]
+        ic1, ic2, ic3 = st.columns([1.0, 1.0, 1.4])
+        with ic1:
+            item_pick = st.selectbox("资产项目", item_order, index=0, key="asset_item_pick")
+        with ic2:
+            scope = st.selectbox("公司 / 合计", ["全部公司合计"] + all_companies, key="asset_scope")
+        with ic3:
+            basis = "整段剔除"
+            if scope == "全部公司合计":
+                basis = st.radio("合计口径", ["整段剔除", "逐期剔除"], horizontal=True, key="asset_basis")
+
+        piv = assets_all.pivot(index="期间", columns="公司", values=item_pick).reindex(all_periods)
+        for c in all_companies:
+            if c not in piv.columns:
+                piv[c] = np.nan
+        piv = piv[all_companies]
+
+        if scope != "全部公司合计":
+            vals = piv[scope] / 1e8
+            ns = vals.notna().astype(int)
+            sample_note = f"{scope} 单家公司"
+            custom = None
+            hover = "%{x}<br>%{y:,.2f} 亿元<extra></extra>"
+        elif basis == "整段剔除":
+            eligible = [c for c in all_companies if piv[c].notna().all()]
+            excluded = [c for c in all_companies if c not in eligible]
+            vals = (piv[eligible].sum(axis=1, min_count=1) if eligible
+                    else pd.Series(np.nan, index=all_periods)) / 1e8
+            ns = pd.Series(len(eligible), index=all_periods)
+            sample_note = (f"整段剔除：纳入 {len(eligible)} 家，剔除 {len(excluded)} 家"
+                           "（该项任一期未披露或报表未列示即整家剔除）")
+            custom = [int(len(eligible)) for _ in all_periods]
+            hover = "%{x}<br>%{y:,.2f} 亿元<br>纳入 %{customdata} 家<extra></extra>"
+        else:
+            vals = piv.sum(axis=1, min_count=1) / 1e8
+            ns = piv.notna().sum(axis=1)
+            sample_note = "逐期剔除：每期只加总当期已披露公司，样本家数随期变化"
+            custom = [(int(ns[p]), "、".join([c for c in all_companies if pd.isna(piv.at[p, c])]))
+                      for p in all_periods]
+            hover = ("%{x}<br>%{y:,.2f} 亿元<br>纳入 %{customdata[0]} 家"
+                     "<br>剔除：%{customdata[1]}<extra></extra>")
+
+        figI = go.Figure(go.Bar(
+            x=all_periods, y=vals.values, marker_color=colors[item_pick],
+            customdata=custom, hovertemplate=hover))
+        tickvals = [p for p in all_periods if p.endswith("Q1")]
+        figI.update_layout(height=360, template="plotly_white", yaxis_title="亿元",
+                           margin=dict(l=10, r=10, t=20, b=10), showlegend=False)
+        figI.update_xaxes(tickmode="array", tickvals=tickvals,
+                          ticktext=[p[:4] for p in tickvals])
+        st.plotly_chart(figI, width="stretch")
+        last_idx = vals.last_valid_index()
+        if last_idx is None:
+            st.info("所选范围暂无该项资产数据。")
+        else:
+            extra = f" · 纳入 {int(ns[last_idx])} 家" if scope == "全部公司合计" else ""
+            st.caption(f"{sample_note} ｜ 最新：{last_idx} · {vals[last_idx]:,.2f} 亿元{extra}")
+
+        if scope == "全部公司合计" and basis == "整段剔除":
+            rows = []
+            for c in excluded:
+                miss = [p for p in all_periods if pd.isna(piv.at[p, c])]
+                if len(miss) == len(all_periods):
+                    txt = "全部报告期"
+                elif len(miss) > 12:
+                    have = [p for p in all_periods if p not in miss]
+                    txt = f"共 {len(miss)} 期缺失（有值：{'、'.join(have)}）"
+                else:
+                    txt = "、".join(miss)
+                rows.append({"公司": c, "未披露期数": len(miss), "未披露报告期": txt})
+            if rows:
+                st.markdown("**剔除公司（整段剔除）**")
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            else:
+                st.caption("全部公司均满足平衡样本条件。")
+        elif scope == "全部公司合计":
+            rows = []
+            for p in all_periods:
+                miss = [c for c in all_companies if pd.isna(piv.at[p, c])]
+                if miss:
+                    rows.append({
+                        "报告期": p,
+                        "合计(亿元)": round(float(vals[p]), 2) if pd.notna(vals[p]) else None,
+                        "纳入家数": int(ns[p]),
+                        "剔除公司": "、".join(miss),
+                    })
+            if rows:
+                st.markdown("**逐期剔除明细**")
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            else:
+                st.caption("各期均为全部公司披露，无剔除。")
+        else:
+            miss = [p for p in all_periods if pd.isna(vals[p])]
+            if miss:
+                st.caption(f"{scope} 未披露报告期：{'、'.join(miss)}")
+            else:
+                st.caption(f"{scope} 各期均有披露。")
+
+        with st.expander("查看逐期数据表"):
+            if scope == "全部公司合计":
+                tbl = pd.DataFrame({"报告期": all_periods, "金额(亿元)": vals.round(2).values,
+                                    "纳入家数": ns.values,
+                                    "剔除公司": (["固定剔除 " + str(len(excluded)) + " 家"] * len(all_periods)
+                                               if basis == "整段剔除"
+                                               else ["、".join([c for c in all_companies if pd.isna(piv.at[p, c])]) or "—"
+                                                     for p in all_periods])})
+            else:
+                tbl = pd.DataFrame({"报告期": all_periods, "金额(亿元)": vals.round(2).values,
+                                    "状态": ["已披露" if pd.notna(v) else "未披露" for v in vals]})
+            st.dataframe(tbl, width="stretch", hide_index=True)
+
+        st.markdown("---")
         comp_pick = st.selectbox("单家公司明细", all_companies, index=0, key="asset_company")
         a = assets_all[(assets_all["公司"] == comp_pick)
                        & assets_all["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))].copy()
@@ -366,7 +481,7 @@ with tab4:
     if HTML.exists():
         c4.download_button("下载离线 HTML 看板", HTML.read_bytes(),
                            file_name="上市公司财务指标_趋势与资产_看板.html", mime="text/html")
-    st.caption("线下趋势模板含 01_指标趋势（全部公司）/ 02_五项资产 / 03_指标快照 三个可下拉联动的页签；离线 HTML 看板为单文件，21 家小多图 + 资产对比 + 指标快照，可直接分发。")
+    st.caption("线下趋势模板含 01_指标趋势（全部公司）/ 02_五项资产 / 03_指标快照 三个可下拉联动的页签；离线 HTML 看板为单文件，21 家小多图 + 五项资产（含单项资产历年）+ 指标快照，可直接分发。")
 
 # ---------------------------------------------------------------- 口径
 with tab5:
