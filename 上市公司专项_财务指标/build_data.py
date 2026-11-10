@@ -10,6 +10,7 @@
   data/panel_long.csv          面板长表（公司×期间×口径×指标）
   data/indicators_single.csv   单季指标宽表
   data/indicators_cum.csv      累计指标宽表
+  data/industry_long.csv       行业合计指标（合并分子/合并分母）
   data/assets_five.csv         五项资产明细
   output/上市公司财务指标_底表.xlsx
 """
@@ -792,10 +793,82 @@ def build():
         d["营收复合增长率"] = p["营收复合增长率"]
         d["累计资产现金回报率"] = safe_div(p["cum_ocf"], p["avg_all_ta"].where(p["avg_all_ta"] > 0))
         d["高学历人才密度"] = p["高学历人才密度"]
-        return d
 
-    ind_q = calc("q")
-    ind_cum = calc("cum")
+        # 行业合计用“合并分子 / 合并分母”，不能把各公司的比率直接相加。
+        # 复合增长率是水平值的增长率，单独按行业汇总后的总资产/TTM 营收计算。
+        parts = {
+            "毛利率": (rev - cost, rev),
+            "期间费用率": (sell + admin + rd + fin, rev),
+            "核心利润率": (core, rev),
+            "归母扣非ROE": (kf * ann, avg_eq.where(avg_eq > 0)),
+            "有息负债率": (p["有息负债"], p["bs_资产总计"]),
+            "现金利息保障倍数": (ocf + interest + itax, interest.where(interest > 0)),
+            "现金债务覆盖率": (ocf * ann, p["有息负债"].where(p["有息负债"] > 0)),
+            "现金流量比率": (ocf * ann, p["bs_流动负债合计"].where(p["bs_流动负债合计"] > 0)),
+            "重资产占比": (p["bs_投资性房地产"].fillna(0) + p["bs_固定资产"].fillna(0)
+                         + p["bs_在建工程"].fillna(0) + p["bs_生产性生物资产"].fillna(0),
+                         p["bs_资产总计"]),
+            "总资产周转率": (rev * ann, avg_ta.where(avg_ta > 0)),
+            "人均创收": (rev * ann / 1e4, p["员工总数"]),
+            "人均核心利润": (core * ann / 1e4, p["员工总数"]),
+            "营收现金比率": (cash_sales, rev),
+            "自由现金流利润率": (ocf - capex, rev),
+            "资本开支覆盖倍数": (ocf, capex.where(capex > 0)),
+            "经营现金流入占比": (cfo_in, cfo_in + cfi_in + cff_in),
+            "累计资产现金回报率": (p["cum_ocf"], p["avg_all_ta"].where(p["avg_all_ta"] > 0)),
+            "高学历人才密度": (p["本科及以上人数"], p["员工总数"]),
+        }
+        return d, parts
+
+    def industry_aggregate(parts):
+        """按报告期汇总各公司分子/分母，得到行业口径指标与样本家数。"""
+        periods = sorted(p.index.get_level_values(1).unique(), key=period_key)
+        out = pd.DataFrame(index=periods)
+        out.index.name = "期间"
+        ns = pd.DataFrame(index=periods)
+        ns.index.name = "期间"
+        for name, (num, den) in parts.items():
+            den_ok = den.where(den > 0)
+            mask = num.notna() & den_ok.notna()
+            nsum = num.where(mask).groupby(level=1).sum(min_count=1)
+            dsum = den_ok.where(mask).groupby(level=1).sum(min_count=1)
+            out[name] = (nsum / dsum).reindex(periods)
+            ns[name] = mask.groupby(level=1).sum().reindex(periods).fillna(0).astype(int)
+
+        def agg_cagr(series):
+            # 只纳入“当前期与 3 年前同期都有值”的公司，避免样本变化造成增长率跳变。
+            res, cnt = {}, {}
+            for per in periods:
+                base = shift_period(per, 3)
+                try:
+                    cur = series.xs(per, level=1)
+                    old = series.xs(base, level=1)
+                except KeyError:
+                    res[per], cnt[per] = np.nan, 0
+                    continue
+                common = cur.index.intersection(old.index)
+                cur, old = cur.reindex(common), old.reindex(common)
+                ok = cur.notna() & old.notna() & (old > 0)
+                if ok.any():
+                    res[per] = (cur[ok].sum() / old[ok].sum()) ** (1 / 3) - 1
+                    cnt[per] = int(ok.sum())
+                else:
+                    res[per], cnt[per] = np.nan, 0
+            return (pd.Series(res).reindex(periods),
+                    pd.Series(cnt).reindex(periods).fillna(0).astype(int))
+
+        out["资产复合增长率"], ns["资产复合增长率"] = agg_cagr(p["bs_资产总计"])
+        out["营收复合增长率"], ns["营收复合增长率"] = agg_cagr(p["ttm_rev"])
+        return out, ns
+
+    ind_q, parts_q = calc("q")
+    ind_cum, parts_cum = calc("cum")
+    ind_industry_q, ind_industry_n_q = industry_aggregate(parts_q)
+    ind_industry_cum, ind_industry_n_cum = industry_aggregate(parts_cum)
+    ind_industry_q = ind_industry_q[list(ind_q.columns)]
+    ind_industry_cum = ind_industry_cum[list(ind_cum.columns)]
+    ind_industry_n_q = ind_industry_n_q[list(ind_q.columns)]
+    ind_industry_n_cum = ind_industry_n_cum[list(ind_cum.columns)]
 
     # ---------------- 五项资产
     assets = pd.DataFrame(index=p.index)
@@ -831,6 +904,23 @@ def build():
 
     long = pd.concat([melt(ind_q, "单季"), melt(ind_cum, "累计")], ignore_index=True)
 
+    def melt_industry(df, ndf, label):
+        d = df.reset_index().melt(id_vars="期间", var_name="指标", value_name="数值")
+        n = ndf.reset_index().melt(id_vars="期间", var_name="指标", value_name="样本数")
+        m = d.merge(n, on=["期间", "指标"], how="left")
+        m["口径"] = label
+        return m[["期间", "口径", "指标", "数值", "样本数"]]
+
+    industry_long = pd.concat([
+        melt_industry(ind_industry_q, ind_industry_n_q, "单季"),
+        melt_industry(ind_industry_cum, ind_industry_n_cum, "累计"),
+    ], ignore_index=True)
+    ind_order = {name: i for i, name in enumerate(ind_q.columns)}
+    industry_long["_p"] = industry_long["期间"].map(period_key)
+    industry_long["_i"] = industry_long["指标"].map(ind_order)
+    industry_long = (industry_long.sort_values(["_p", "_i"])
+                      .drop(columns=["_p", "_i"]).reset_index(drop=True))
+
     # 排序
     def sort_df(df):
         df = df.copy()
@@ -858,6 +948,7 @@ def build():
     long.to_csv(DATA_DIR / "panel_long.csv", index=False, encoding="utf-8-sig")
     ind_q_out.to_csv(DATA_DIR / "indicators_single.csv", index=False, encoding="utf-8-sig")
     ind_cum_out.to_csv(DATA_DIR / "indicators_cum.csv", index=False, encoding="utf-8-sig")
+    industry_long.to_csv(DATA_DIR / "industry_long.csv", index=False, encoding="utf-8-sig")
     assets.to_csv(DATA_DIR / "assets_five.csv", index=False, encoding="utf-8-sig")
     kf.to_csv(DATA_DIR / "kf_nonrecurring.csv", index=False, encoding="utf-8-sig")
     emp.to_csv(DATA_DIR / "employees.csv", index=False, encoding="utf-8-sig")

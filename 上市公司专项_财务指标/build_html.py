@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成线下单文件 HTML 看板：21 家公司指标趋势、五项资产与指标快照。
+"""生成线下单文件 HTML 看板：行业合计、21 家公司指标趋势、单指标多公司对比、五项资产与指标快照。
 
 用法：
     D:\\miniconda\\python.exe build_html.py
@@ -69,6 +69,7 @@ def main() -> None:
     q = pd.read_csv(DATA / "indicators_single.csv")
     c = pd.read_csv(DATA / "indicators_cum.csv")
     a = pd.read_csv(DATA / "assets_five.csv")
+    industry_long = pd.read_csv(DATA / "industry_long.csv")
 
     companies = list(dict.fromkeys(q["公司"].tolist()))
     periods = sorted(q["期间"].unique(), key=period_key)
@@ -82,6 +83,7 @@ def main() -> None:
         assert nm in q.columns and nm in c.columns, nm
     for nm in ASSET_ITEMS + ["资产总计"]:
         assert nm in a.columns, nm
+    assert set(industry_long["指标"]) == set(names), "industry_long 指标不完整"
 
     series: dict[str, dict[str, dict[str, list]]] = {}
     for cal, df in [("单季", q), ("累计", c)]:
@@ -96,6 +98,21 @@ def main() -> None:
                 for per in periods:
                     arr.append(clean(sub.at[per, nm], digits) if per in sub.index else None)
                 series[cal][nm][comp] = arr
+
+    ind_meta = {x["name"]: x for x in indicators}
+    industry: dict[str, dict[str, list]] = {}
+    industry_n: dict[str, dict[str, list]] = {}
+    for cal in ["单季", "累计"]:
+        sub = industry_long[industry_long["口径"] == cal]
+        piv = sub.pivot(index="期间", columns="指标", values="数值").reindex(periods)
+        npiv = sub.pivot(index="期间", columns="指标", values="样本数").reindex(periods)
+        industry[cal] = {}
+        industry_n[cal] = {}
+        for nm in names:
+            digits = 3 if ind_meta[nm]["type"] == "percap" else 6
+            industry[cal][nm] = [clean(piv.at[per, nm], digits) for per in periods]
+            industry_n[cal][nm] = [int(npiv.at[per, nm]) if not pd.isna(npiv.at[per, nm]) else 0
+                                   for per in periods]
 
     assets: dict[str, list] = {}
     for comp in companies:
@@ -126,6 +143,8 @@ def main() -> None:
         "indicators": indicators,
         "assetItems": ASSET_ITEMS,
         "series": series,
+        "industry": industry,
+        "industryN": industry_n,
         "assets": assets,
     }
 

@@ -55,6 +55,10 @@ INDICATORS = [
 IND_META = {x[0]: {"cat": x[1], "type": x[2], "dir": x[3], "formula": x[4]} for x in INDICATORS}
 IND_NAMES = [x[0] for x in INDICATORS]
 CATS = ["盈利能力", "财务健康", "运营效率", "现金韧性", "发展质量"]
+CAT_COLOR = {
+    "盈利能力": "#2E5EAA", "财务健康": "#C0392B", "运营效率": "#2A9D8F",
+    "现金韧性": "#D9822B", "发展质量": "#8E44AD",
+}
 
 
 @st.cache_data
@@ -64,7 +68,8 @@ def load_data():
     a = pd.read_csv(DATA / "assets_five.csv")
     kf = pd.read_csv(DATA / "kf_nonrecurring.csv")
     emp = pd.read_csv(DATA / "employees.csv")
-    return q, c, a, kf, emp
+    industry = pd.read_csv(DATA / "industry_long.csv")
+    return q, c, a, kf, emp, industry
 
 
 def period_key(p):
@@ -90,7 +95,7 @@ def fmt_num(v, typ):
     return f"{v:,.2f}"
 
 
-q_all, c_all, assets_all, kf_all, emp_all = load_data()
+q_all, c_all, assets_all, kf_all, emp_all, industry_all = load_data()
 all_periods = sorted(q_all["期间"].unique(), key=period_key)
 all_companies = list(dict.fromkeys(q_all["公司"].tolist()))
 focus_default = [c for c in FOCUS_DEFAULT if c in all_companies]
@@ -212,62 +217,154 @@ with tab1:
 
 # ---------------------------------------------------------------- 趋势
 with tab2:
-    st.subheader("指标趋势（全部公司）")
-    st.caption("趋势图与数据表默认覆盖全部公司，不受左侧“公司”筛选影响；如需聚焦可在此临时减少。")
-    tcompanies = st.multiselect("趋势公司", all_companies, default=all_companies,
-                                key="trend_companies")
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        cat_pick = st.multiselect("指标分类", CATS, default=CATS)
-    available = [i for i in IND_NAMES if IND_META[i]["cat"] in cat_pick]
-    with c2:
-        pick = st.multiselect("指标（最多 6 个）", available,
-                              default=[i for i in ["毛利率", "核心利润率", "归母扣非ROE", "有息负债率"] if i in available][:4],
-                              max_selections=6)
-    if not tcompanies:
-        st.info("请选择至少一家公司。")
-    elif not pick:
-        st.info("请选择至少一个指标。")
-    else:
-        tdf = (q_all if caliber == "单季" else c_all).copy()
-        tdf = tdf[tdf["公司"].isin(tcompanies)
-                  & tdf["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))]
-        n = len(pick)
-        cols = 2 if n > 1 else 1
-        rows = int(np.ceil(n / cols))
-        fig = make_subplots(rows=rows, cols=cols, subplot_titles=pick,
-                            vertical_spacing=0.18, horizontal_spacing=0.10)
-        for k, ind in enumerate(pick):
-            r, c = divmod(k, cols)
-            for comp in tcompanies:
-                sub = tdf[tdf["公司"] == comp].sort_values("期间", key=lambda s: s.map(period_key))
-                fig.add_trace(
-                    go.Scatter(x=sub["期间"], y=sub[ind], name=comp, mode="lines+markers",
-                               line=dict(color=COMPANY_COLOR.get(comp), width=2),
-                               marker=dict(size=5), showlegend=(k == 0),
-                               hovertemplate=f"{comp}<br>%{{x}}<br>%{{y:.4f}}<extra></extra>"),
-                    row=r + 1, col=c + 1)
-            typ = IND_META[ind]["type"]
-            # y 轴顶部留白，避免折线顶到子图标题（如“核心利润率”）
-            vals = pd.to_numeric(tdf[ind], errors="coerce").dropna()
-            if not vals.empty:
-                lo, hi = float(vals.min()), float(vals.max())
-                pad = (hi - lo) * 0.18 if hi > lo else max(abs(hi) * 0.1, 0.05)
-                yrange = [lo - pad, hi + pad]
-            else:
-                yrange = None
-            fig.update_yaxes(tickformat=".1%" if typ == "pct" else ",.2f",
-                             range=yrange, row=r + 1, col=c + 1)
-            fig.update_xaxes(type="category", tickangle=-45, row=r + 1, col=c + 1)
-        fig.update_layout(height=300 * rows, template="plotly_white",
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10)),
-                          margin=dict(l=10, r=10, t=80, b=10))
-        st.plotly_chart(fig, width="stretch")
+    st.subheader("行业合计 · 20 项指标")
+    st.caption("按所选口径汇总全部公司。比率类采用“合并分子 / 合并分母”，不是把各家比率简单相加；"
+               "复合增长率按行业汇总后的总资产 / TTM 营收计算。悬停可看纳入家数。")
+    ind_df = industry_all[industry_all["口径"] == caliber].copy()
+    ind_df = ind_df[ind_df["期间"].isin(periods)]
+    piv = ind_df.pivot(index="期间", columns="指标", values="数值").reindex(
+        index=periods, columns=IND_NAMES)
+    npiv = ind_df.pivot(index="期间", columns="指标", values="样本数").reindex(
+        index=periods, columns=IND_NAMES)
 
-        st.markdown("**数据表（全部公司）**")
-        tbl = tdf[["公司", "期间"] + pick].sort_values(
-            ["公司", "期间"], key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
-        st.dataframe(tbl, width="stretch", hide_index=True, height=420)
+    titles = []
+    for ind_name in IND_NAMES:
+        s = piv[ind_name].dropna() if ind_name in piv else pd.Series(dtype=float)
+        typ = IND_META[ind_name]["type"]
+        titles.append(f"{ind_name} · {fmt(s.iloc[-1], typ) if len(s) else '—'}")
+
+    ncol = 5
+    nrow = int(np.ceil(len(IND_NAMES) / ncol))
+    figI = make_subplots(rows=nrow, cols=ncol, subplot_titles=titles,
+                         vertical_spacing=0.085, horizontal_spacing=0.055)
+    for k, ind_name in enumerate(IND_NAMES):
+        r, c = divmod(k, ncol)
+        typ = IND_META[ind_name]["type"]
+        s = piv[ind_name] if ind_name in piv else pd.Series(np.nan, index=periods)
+        counts = npiv[ind_name].fillna(0) if ind_name in npiv else pd.Series(0, index=periods)
+        hover = ":.2%" if typ == "pct" else (":.1f" if typ == "percap" else ":.2f")
+        figI.add_trace(go.Scatter(
+            x=periods, y=s.values, mode="lines", name=ind_name,
+            line=dict(color=CAT_COLOR[IND_META[ind_name]["cat"]], width=1.8),
+            customdata=counts.values,
+            hovertemplate=f"{ind_name}<br>%{{x}}<br>%{{y{hover}}}<br>纳入 %{{customdata:.0f}} 家<extra></extra>",
+            showlegend=False), row=r + 1, col=c + 1)
+        figI.add_hline(y=0, line_dash="dot", line_color="#D9D8D2", line_width=0.8,
+                       row=r + 1, col=c + 1)
+        figI.update_yaxes(tickformat=".1%" if typ == "pct" else ",.2f",
+                          nticks=4, row=r + 1, col=c + 1)
+        figI.update_xaxes(type="category", showticklabels=(r == nrow - 1),
+                          tickangle=-45, nticks=5, row=r + 1, col=c + 1)
+    figI.update_layout(height=162 * nrow, template="plotly_white",
+                       margin=dict(l=24, r=16, t=52, b=24))
+    figI.update_annotations(font_size=9.5)
+    st.plotly_chart(figI, width="stretch")
+
+    st.markdown("---")
+    st.subheader("单指标 · 多公司对比")
+    st.caption("选择一个指标，把不同公司画到同一张图里；默认聚焦 6 家，可多选。")
+    cc1, cc2 = st.columns([1, 2.4])
+    with cc1:
+        cmp_ind = st.selectbox(
+            "指标", IND_NAMES,
+            index=IND_NAMES.index("核心利润率") if "核心利润率" in IND_NAMES else 0,
+            key="trend_cmp_ind")
+    with cc2:
+        cmp_companies = st.multiselect(
+            "公司", all_companies, default=focus_default, key="trend_cmp_companies")
+
+    if not cmp_companies:
+        st.info("请选择至少一家公司。")
+    else:
+        cmp_df = (q_all if caliber == "单季" else c_all).copy()
+        cmp_df = cmp_df[cmp_df["公司"].isin(cmp_companies)
+                        & cmp_df["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))]
+        figC = go.Figure()
+        for comp in cmp_companies:
+            sub = cmp_df[cmp_df["公司"] == comp].sort_values("期间", key=lambda s: s.map(period_key))
+            figC.add_trace(go.Scatter(
+                x=sub["期间"], y=sub[cmp_ind], name=comp, mode="lines",
+                line=dict(color=COMPANY_COLOR.get(comp), width=2),
+                hovertemplate=f"{comp}<br>%{{x}}<br>%{{y:.4f}}<extra></extra>"))
+        vals = pd.to_numeric(cmp_df[cmp_ind], errors="coerce").dropna()
+        if not vals.empty:
+            lo, hi = float(vals.min()), float(vals.max())
+            pad = (hi - lo) * 0.14 if hi > lo else max(abs(hi) * 0.1, 0.05)
+            yrange = [lo - pad, hi + pad]
+        else:
+            yrange = None
+        typ = IND_META[cmp_ind]["type"]
+        figC.add_hline(y=0, line_dash="dot", line_color="#D9D8D2", line_width=0.8)
+        figC.update_layout(height=460, template="plotly_white",
+                           legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0,
+                                       font=dict(size=10)),
+                           margin=dict(l=10, r=12, t=70, b=10),
+                           xaxis_title=None, yaxis_title=None)
+        figC.update_yaxes(tickformat=".1%" if typ == "pct" else ",.2f", range=yrange)
+        figC.update_xaxes(type="category", tickangle=-45)
+        st.plotly_chart(figC, width="stretch")
+        with st.expander("查看对比数据表"):
+            tblC = cmp_df[["公司", "期间", cmp_ind]].sort_values(
+                ["公司", "期间"],
+                key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
+            st.dataframe(tblC, width="stretch", hide_index=True, height=360)
+
+    with st.expander("多指标对照（原功能）", expanded=False):
+        st.caption("趋势图与数据表默认覆盖全部公司，不受左侧“公司”筛选影响；如需聚焦可在此临时减少。")
+        tcompanies = st.multiselect("趋势公司", all_companies, default=all_companies,
+                                    key="trend_companies")
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            cat_pick = st.multiselect("指标分类", CATS, default=CATS, key="trend_cats")
+        available = [i for i in IND_NAMES if IND_META[i]["cat"] in cat_pick]
+        with c2:
+            pick = st.multiselect("指标（最多 6 个）", available,
+                                  default=[i for i in ["毛利率", "核心利润率", "归母扣非ROE", "有息负债率"] if i in available][:4],
+                                  max_selections=6, key="trend_metrics")
+        if not tcompanies:
+            st.info("请选择至少一家公司。")
+        elif not pick:
+            st.info("请选择至少一个指标。")
+        else:
+            tdf = (q_all if caliber == "单季" else c_all).copy()
+            tdf = tdf[tdf["公司"].isin(tcompanies)
+                      & tdf["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))]
+            n = len(pick)
+            cols = 2 if n > 1 else 1
+            rows = int(np.ceil(n / cols))
+            fig = make_subplots(rows=rows, cols=cols, subplot_titles=pick,
+                                vertical_spacing=0.18, horizontal_spacing=0.10)
+            for k, ind_name in enumerate(pick):
+                r, c = divmod(k, cols)
+                for comp in tcompanies:
+                    sub = tdf[tdf["公司"] == comp].sort_values("期间", key=lambda s: s.map(period_key))
+                    fig.add_trace(
+                        go.Scatter(x=sub["期间"], y=sub[ind_name], name=comp, mode="lines+markers",
+                                   line=dict(color=COMPANY_COLOR.get(comp), width=2),
+                                   marker=dict(size=5), showlegend=(k == 0),
+                                   hovertemplate=f"{comp}<br>%{{x}}<br>%{{y:.4f}}<extra></extra>"),
+                        row=r + 1, col=c + 1)
+                typ = IND_META[ind_name]["type"]
+                vals = pd.to_numeric(tdf[ind_name], errors="coerce").dropna()
+                if not vals.empty:
+                    lo, hi = float(vals.min()), float(vals.max())
+                    pad = (hi - lo) * 0.18 if hi > lo else max(abs(hi) * 0.1, 0.05)
+                    yrange = [lo - pad, hi + pad]
+                else:
+                    yrange = None
+                fig.update_yaxes(tickformat=".1%" if typ == "pct" else ",.2f",
+                                 range=yrange, row=r + 1, col=c + 1)
+                fig.update_xaxes(type="category", tickangle=-45, row=r + 1, col=c + 1)
+            fig.update_layout(height=300 * rows, template="plotly_white",
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10)),
+                              margin=dict(l=10, r=10, t=80, b=10))
+            st.plotly_chart(fig, width="stretch")
+
+            st.markdown("**数据表（全部公司）**")
+            tbl = tdf[["公司", "期间"] + pick].sort_values(
+                ["公司", "期间"],
+                key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
+            st.dataframe(tbl, width="stretch", hide_index=True, height=420)
 
 # ---------------------------------------------------------------- 资产
 with tab3:
