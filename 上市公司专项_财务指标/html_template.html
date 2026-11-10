@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>上市猪企财务质量面板 · 离线版</title>
+<style>
+*{box-sizing:border-box}
+:root{
+  --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10); --accent:#2a78d6;
+  --wash:rgba(42,120,214,.08);
+  --shadow:0 1px 2px rgba(11,11,11,.04),0 8px 24px rgba(11,11,11,.04);
+  --font:system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+}
+:root[data-theme="dark"]{
+  --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10); --accent:#3987e5;
+  --wash:rgba(57,135,229,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+html,body{margin:0;padding:0}
+body{background:var(--plane);color:var(--ink);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+button,select{font-family:inherit}
+.top{position:sticky;top:0;z-index:30;background:var(--plane);border-bottom:1px solid var(--border)}
+.wrap{max-width:1440px;margin:0 auto;padding:0 24px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 0 9px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{width:38px;height:38px;border-radius:11px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;letter-spacing:1px;flex:0 0 auto}
+h1{font-size:18px;line-height:1.2;margin:0;font-weight:650;letter-spacing:.2px}
+.sub{font-size:12px;color:var(--ink2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.pill{font-size:11px;color:var(--ink2);border:1px solid var(--border);border-radius:999px;padding:5px 10px;background:var(--surface);white-space:nowrap}
+.btn{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--ink2);font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--axis)}
+.tabs{display:flex;gap:26px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{appearance:none;border:0;background:none;color:var(--ink2);font-size:14px;padding:9px 0 11px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
+main{max-width:1440px;margin:0 auto;padding:22px 24px 44px}
+.panel[hidden]{display:none}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 22px;padding:13px 16px;margin-bottom:14px}
+.control{display:flex;flex-direction:column;gap:6px;min-width:150px}
+.control label{font-size:11px;color:var(--muted);letter-spacing:.3px}
+select{appearance:none;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:8px 30px 8px 10px;font-size:13px;min-width:180px;cursor:pointer;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;background:var(--plane);border:1px solid var(--border);border-radius:9px;padding:3px}
+.seg button{border:0;background:none;color:var(--ink2);font-size:13px;padding:5px 12px;border-radius:6px;cursor:pointer}
+.seg button.active{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:18px 0 12px}
+.section-head h2{font-size:15px;margin:0;font-weight:650}
+.section-head p{font-size:12px;color:var(--ink2);margin:4px 0 0}
+.note{font-size:11.5px;color:var(--muted);line-height:1.45}
+.facet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px}
+.facet{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 10px 5px;box-shadow:var(--shadow)}
+.facet-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 2px 1px}
+.fname{font-size:13px;font-weight:600}
+.fval{font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fchart{height:154px}
+.chart-card{padding:16px 18px 10px;margin-bottom:14px}
+.chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:8px}
+.chart-head h2{font-size:15px;margin:0;font-weight:650}
+.chart-head p{font-size:12px;color:var(--ink2);margin:4px 0 0}
+.chart{width:100%;height:340px}
+.chart.tall{height:620px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+details{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+summary{cursor:pointer;padding:13px 16px;font-size:13px;font-weight:600;color:var(--ink2);list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"▸";color:var(--muted);font-size:11px;transition:transform .15s}
+details[open] summary::before{transform:rotate(90deg)}
+.table-scroll{overflow:auto;max-height:65vh;border-top:1px solid var(--border)}
+table.data-table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+.data-table th,.data-table td{padding:6px 9px;border-bottom:1px solid var(--grid);white-space:nowrap;text-align:right}
+.data-table thead th{position:sticky;top:0;background:var(--surface);color:var(--ink2);font-weight:600;z-index:2;border-bottom:1px solid var(--axis)}
+.data-table .sticky-col{position:sticky;left:0;background:var(--surface);text-align:left;color:var(--ink);font-weight:600;z-index:1}
+.data-table thead .sticky-col{z-index:3}
+.data-table tbody tr:hover td,.data-table tbody tr:hover th{background:var(--wash)}
+.matrix-wrap{overflow:auto;max-height:78vh;border-top:1px solid var(--border)}
+table.matrix{border-collapse:separate;border-spacing:0;font-size:11.5px;font-variant-numeric:tabular-nums;min-width:1580px;width:100%}
+.matrix th,.matrix td{border-bottom:1px solid var(--grid);border-right:1px solid var(--grid);padding:5px 7px;text-align:right;white-space:nowrap}
+.matrix thead th{position:sticky;background:var(--surface);z-index:3;color:var(--ink2);font-weight:600;text-align:center;height:30px;padding:4px 6px}
+.matrix thead tr:nth-child(1) th{top:0;font-size:11px;color:var(--muted);font-weight:600}
+.matrix thead tr:nth-child(2) th{top:30px;font-size:11px;line-height:1.25;white-space:normal;min-width:74px;max-width:74px}
+.matrix .corner{position:sticky;left:0;top:0;z-index:6;background:var(--surface);text-align:left;color:var(--ink)}
+.matrix tbody th{position:sticky;left:0;background:var(--surface);text-align:left;font-weight:600;z-index:2;color:var(--ink)}
+.matrix td.missing{background:transparent!important;color:var(--muted)}
+.unit{display:block;font-weight:400;color:var(--muted);font-size:10px}
+.scale-legend{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);padding:0 2px 10px}
+.ramp{width:150px;height:8px;border-radius:4px;display:inline-block}
+.method-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:14px}
+.method-card{padding:16px 18px}
+.method-card h2{font-size:15px;margin:0 0 10px;font-weight:650}
+.rules{display:grid;gap:9px;margin:0;padding:0;list-style:none}
+.rules li{position:relative;font-size:12.5px;color:var(--ink2);line-height:1.55;padding-left:14px}
+.rules li::before{content:"";position:absolute;left:0;top:.64em;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+table.method{width:100%;border-collapse:collapse;font-size:12px}
+.method th,.method td{padding:7px 8px;border-bottom:1px solid var(--grid);text-align:left;vertical-align:top}
+.method th{color:var(--ink2);font-weight:600;background:var(--plane);position:sticky;top:0;z-index:1}
+.method td.small{color:var(--ink2);font-size:11.5px}
+.cat-badge{display:inline-block;padding:1px 6px;border-radius:999px;background:var(--wash);color:var(--accent);font-size:10.5px;white-space:nowrap}
+.empty{padding:40px 16px;text-align:center;color:var(--muted);font-size:13px}
+footer{max-width:1440px;margin:0 auto;padding:6px 24px 30px;color:var(--muted);font-size:11.5px;line-height:1.6}
+footer b{color:var(--ink2);font-weight:600}
+@media (max-width:1000px){
+  .two-col,.method-grid{grid-template-columns:1fr}
+  .chart.tall{height:560px}
+}
+@media (max-width:640px){
+  .wrap,main,footer{padding-left:14px;padding-right:14px}
+  .topbar{padding-top:12px}
+  h1{font-size:16px}
+  .sub{white-space:normal}
+  .pill{display:none}
+  .facet-grid{grid-template-columns:1fr 1fr}
+  .facet-grid .fchart{height:130px}
+  main{padding-top:16px}
+}
+@media (max-width:460px){
+  .facet-grid{grid-template-columns:1fr}
+}
+@media print{
+  .top,.toolbar,.actions{position:static}
+  .tab{display:none}
+  .panel[hidden]{display:block}
+  details{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="mark">猪</div>
+        <div style="min-width:0">
+          <h1>上市猪企财务质量面板</h1>
+          <div class="sub">21 家公司 · 2020Q1–2026Q3 · 20 项指标 · 556 个公司-报告期</div>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="pill">离线单文件</span>
+        <button class="btn" id="themeBtn" type="button">深色模式</button>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="视图">
+      <button class="tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-trend" data-tab="trend" id="tab-trend">指标趋势</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-assets" data-tab="assets" id="tab-assets">五项资产</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-snapshot" data-tab="snapshot" id="tab-snapshot">指标快照</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-method" data-tab="method" id="tab-method">口径说明</button>
+    </nav>
+  </div>
+</div>
+
+<main>
+  <section class="panel" id="panel-trend" role="tabpanel" aria-labelledby="tab-trend">
+    <div class="toolbar card">
+      <div class="control">
+        <label>口径</label>
+        <div class="seg" id="calSeg" role="group" aria-label="口径">
+          <button type="button" data-val="单季" class="active">单季</button>
+          <button type="button" data-val="累计">累计</button>
+        </div>
+      </div>
+      <div class="control" style="min-width:220px">
+        <label for="indSel">指标</label>
+        <select id="indSel"></select>
+      </div>
+      <div class="control">
+        <label>纵轴</label>
+        <div class="seg" id="scaleSeg" role="group" aria-label="纵轴范围">
+          <button type="button" data-val="unified" class="active">统一量程</button>
+          <button type="button" data-val="facet">各自量程</button>
+        </div>
+      </div>
+    </div>
+    <div class="section-head">
+      <div>
+        <h2 id="trendTitle">指标趋势</h2>
+        <p id="trendSub"></p>
+      </div>
+      <div class="note" id="scaleNote"></div>
+    </div>
+    <div class="facet-grid" id="trendGrid"></div>
+    <details id="trendDetails">
+      <summary>查看数据表（21 家 × 27 个报告期）</summary>
+      <div class="table-scroll" id="trendTable"></div>
+    </details>
+  </section>
+
+  <section class="panel" id="panel-assets" role="tabpanel" aria-labelledby="tab-assets" hidden>
+    <div class="toolbar card">
+      <div class="control">
+        <label for="assetPeriod">对比报告期</label>
+        <select id="assetPeriod"></select>
+      </div>
+      <div class="note" style="align-self:center;max-width:520px">全部公司在同一报告期的资产结构对比，按五项合计降序；金额单位：<b>亿元</b>。空白表示未披露。</div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head">
+        <div>
+          <h2>五项资产 · 全部公司</h2>
+          <p>固定资产 / 存货 / 在建工程 / 生产性生物资产 / 投资性房地产　·　滚轮或拖动底部滑块可缩放金额轴</p>
+        </div>
+        <div class="note" id="assetAllNote"></div>
+      </div>
+      <div id="assetAll" class="chart tall"></div>
+    </div>
+    <details id="assetAllDetails">
+      <summary>查看全部公司资产数据表</summary>
+      <div class="table-scroll" id="assetAllTable"></div>
+    </details>
+
+    <div class="section-head">
+      <div>
+        <h2>单家公司明细</h2>
+        <p>2020Q1 以来五项资产走势与占总资产比重</p>
+      </div>
+    </div>
+    <div class="toolbar card">
+      <div class="control">
+        <label for="assetCompany">公司</label>
+        <select id="assetCompany"></select>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="card chart-card">
+        <div class="chart-head"><div><h2>五项资产走势</h2><p>单位：亿元</p></div></div>
+        <div id="assetComp" class="chart"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head"><div><h2>占总资产比重</h2><p>五项合计 / 固定资产 / 存货</p></div></div>
+        <div id="assetShare" class="chart"></div>
+      </div>
+    </div>
+    <details id="assetCompDetails">
+      <summary>查看单家公司数据表</summary>
+      <div class="table-scroll" id="assetCompTable"></div>
+    </details>
+  </section>
+
+  <section class="panel" id="panel-snapshot" role="tabpanel" aria-labelledby="tab-snapshot" hidden>
+    <div class="toolbar card">
+      <div class="control">
+        <label>口径</label>
+        <div class="seg" id="snapCalSeg" role="group" aria-label="快照口径">
+          <button type="button" data-val="单季" class="active">单季</button>
+          <button type="button" data-val="累计">累计</button>
+        </div>
+      </div>
+      <div class="control">
+        <label for="snapPeriod">报告期</label>
+        <select id="snapPeriod"></select>
+      </div>
+      <div class="control" style="margin-left:auto;min-width:auto">
+        <label>&nbsp;</label>
+        <button class="btn" id="snapExport" type="button">导出 CSV</button>
+      </div>
+    </div>
+    <div class="card" style="padding:14px 16px 0;overflow:hidden">
+      <div class="chart-head">
+        <div>
+          <h2>指标快照 · 全部公司</h2>
+          <p>颜色按列内排名，色阶越突出 = 按指标方向表现越好；空白表示未披露；左右滑动查看更多指标。</p>
+        </div>
+      </div>
+      <div class="scale-legend"><span>表现较弱</span><i class="ramp" id="rampBar"></i><span>表现较好</span></div>
+      <div class="matrix-wrap" id="snapWrap"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-method" role="tabpanel" aria-labelledby="tab-method" hidden>
+    <div class="method-grid">
+      <div class="card method-card">
+        <h2>口径约定</h2>
+        <ul class="rules">
+          <li>利润表、现金流量表为年初至今累计；<b>单季 = 本期累计 − 上期累计</b>（Q1 即本期）。</li>
+          <li>年化只用于流量/存量型比率（ROE、周转率、现金覆盖等），毛利率、费用率、利润率等纯比率不年化。</li>
+          <li>平均存量：单季 =（上季末 + 本季末）/ 2；累计 =（上年末 + 本期末）/ 2。</li>
+          <li>员工数：Q1–Q3 用上年末年报，Q4 用本年末年报；2020Q1–Q3 缺 2019 年报，用 2020 年末代替。</li>
+          <li>核心利润 = 营业收入 − 营业成本 − 税金及附加 − 销售/管理/研发/财务费用。</li>
+          <li>有息负债 = 短期借款 + 一年内到期的非流动负债 + 长期借款 + 应付债券 + 租赁负债。</li>
+        </ul>
+      </div>
+      <div class="card method-card">
+        <h2>数据说明</h2>
+        <ul class="rules">
+          <li><b>21 家上市猪企</b>，2020Q1–2026Q3 共 <b>556 个公司-报告期</b>；新希望截至 2026H1，其余 20 家截至 2026Q3。</li>
+          <li>扣非归母净利润与员工学历结构来自 556 份公告 PDF（扣非 556/556，员工 124/124 份年报）。</li>
+          <li>趋势图为 21 家小多图，<b>统一量程</b>时共用纵轴，便于横向比较；<b>各自量程</b>便于看单家轨迹。</li>
+          <li>纵轴按 5%–95% 分位截取，极端值不会压扁其他公司；鼠标悬停可看真实值，完整值在数据表中。</li>
+          <li>空白表示该公司该期尚未披露，<b>不是 0</b>；五项资产金额单位为亿元。</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card method-card" style="margin-top:14px">
+      <h2>20 项指标公式</h2>
+      <div style="border-top:1px solid var(--border)">
+        <table class="method" id="methodTable"></table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <b>上市猪企财务质量面板 · 离线单文件</b>　数据源：21 家公司定期报告与公告 PDF　生成日期：__BUILD_DATE__<br>
+  页面可直接分发，不依赖网络；如需更新数据，运行 <b>build_data.py</b> 后执行 <b>build_html.py</b> 重新生成。
+</footer>
+
+<script>
+/*__ECHARTS__*/
+</script>
+<script id="pig-data" type="application/json">__DATA_JSON__</script>
+<script>
+(function(){
+'use strict';
+
+const DATA = JSON.parse(document.getElementById('pig-data').textContent);
+const COMPANIES = DATA.companies;
+const PERIODS = DATA.periods;
+const INDS = DATA.indicators;
+const IND = Object.fromEntries(INDS.map(x => [x.name, x]));
+const ASSET_ITEMS = DATA.assetItems;          // [投资性房地产, 固定资产, 在建工程, 生产性生物资产, 存货]
+const ASSET_ROWS = DATA.assets;               // company -> 27 × [inv, fix, con, bio, invty, totalAssets] | null
+const FONT = 'system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif';
+
+const state = {
+  caliber: '单季',
+  ind: INDS[0].name,
+  scale: 'unified',
+  assetPeriod: PERIODS[PERIODS.length - 1],
+  assetCompany: COMPANIES[0],
+  snapCaliber: '单季',
+  snapPeriod: PERIODS[PERIODS.length - 1]
+};
+
+const PALETTE = {
+  light: {
+    surface: '#fcfcfb', ink: '#0b0b0b', ink2: '#52514e', muted: '#898781',
+    grid: '#e1e0d9', axis: '#c3c2b7', accent: '#2a78d6',
+    asset: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'],
+    ramp: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b']
+  },
+  dark: {
+    surface: '#1a1a19', ink: '#f0efec', ink2: '#c3c2b7', muted: '#898781',
+    grid: '#2c2c2a', axis: '#383835', accent: '#3987e5',
+    asset: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181'],
+    ramp: ['#184f95', '#1c5cab', '#256abf', '#2a78d6', '#3987e5', '#6da7ec', '#9ec5f4']
+  }
+};
+const isDark = () => document.documentElement.dataset.theme === 'dark';
+const P = () => isDark() ? PALETTE.dark : PALETTE.light;
+
+const THEME_KEY = 'pig-dash-theme';
+(function initTheme(){
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+  const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+})();
+
+const NUL = v => v === null || v === undefined || Number.isNaN(v);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function unitOf(type){ return type === 'pct' ? '%' : type === 'percap' ? '万元/人' : '倍'; }
+function dirText(dir){ return dir > 0 ? '越高越好' : '越低越好'; }
+function fmt(v, type, digits){
+  if (NUL(v)) return '—';
+  const d = digits === undefined ? 2 : digits;
+  if (type === 'pct') return (v * 100).toFixed(d) + '%';
+  if (type === 'percap') return v.toFixed(1);
+  return v.toFixed(d);
+}
+function fmtAxis(v, type){
+  if (type === 'pct') return (v * 100).toFixed(0) + '%';
+  if (type === 'percap') return v.toFixed(0);
+  const a = Math.abs(v);
+  return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
+}
+function fmtYi(v){
+  if (NUL(v)) return '—';
+  return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function fmtPct(v){
+  if (NUL(v)) return '—';
+  return (v * 100).toFixed(2) + '%';
+}
+function seriesFor(cal, ind, comp){
+  const a = DATA.series[cal] && DATA.series[cal][ind];
+  const b = a && a[comp];
+  return b || [];
+}
+function lastNonNull(arr){
+  for (let i = arr.length - 1; i >= 0; i--) if (!NUL(arr[i])) return i;
+  return -1;
+}
+function quantile(sorted, q){
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+function robustRange(values){
+  const v = values.filter(x => !NUL(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  let lo = quantile(v, 0.05), hi = quantile(v, 0.95);
+  if (lo === hi) { const pad = Math.abs(lo) * 0.1 || 1; lo -= pad; hi += pad; }
+  const rawMin = v[0], rawMax = v[v.length - 1];
+  if (lo > 0 && rawMin < 0) lo = 0;
+  if (hi < 0 && rawMax > 0) hi = 0;
+  const pad = (hi - lo) * 0.08 || Math.abs(hi || 1) * 0.1;
+  return [lo - pad, hi + pad];
+}
+function niceStep(x){
+  if (!isFinite(x) || x <= 0) return 1;
+  const exp = Math.floor(Math.log10(x));
+  const f = x / Math.pow(10, exp);
+  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  return nf * Math.pow(10, exp);
+}
+function niceBounds(lo, hi){
+  const span = hi - lo;
+  if (!isFinite(span) || span <= 0) return [lo, hi];
+  const step = niceStep(span / 3);
+  return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+}
+function rangeAll(){
+  const all = [];
+  COMPANIES.forEach(c => {
+    const arr = seriesFor(state.caliber, state.ind, c);
+    arr.forEach(v => { if (!NUL(v)) all.push(v); });
+  });
+  return robustRange(all) || [-1, 1];
+}
+function lum(hex){
+  const c = hex.replace('#', '');
+  const rgb = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+}
+function textOn(hex){
+  const L = lum(hex);
+  const cw = 1.05 / (L + 0.05);
+  const cb = (L + 0.05) / 0.05;
+  return cw >= cb ? '#ffffff' : '#0b0b0b';
+}
+function tooltipBase(p){
+  return {
+    backgroundColor: p.surface,
+    borderColor: p.grid,
+    borderWidth: 1,
+    padding: [8, 10],
+    textStyle: {color: p.ink, fontSize: 12, fontFamily: FONT},
+    extraCssText: 'box-shadow:0 6px 22px rgba(0,0,0,.16);border-radius:8px;'
+  };
+}
+function axisLabel(p, type){
+  return {color: p.muted, fontSize: 9, formatter: v => fmtAxis(v, type), margin: 4};
+}
+function yearInterval(idx){ return PERIODS[idx].endsWith('Q1'); }
+
+// ---------------------------------------------------------------- tabs
+let currentTab = 'trend';
+function activate(name){
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.panel').forEach(panel => {
+    panel.hidden = panel.id !== 'panel-' + name;
+  });
+  requestAnimationFrame(() => {
+    if (name === 'trend') { ensureTrend(); updateTrend(); }
+    if (name === 'assets') { ensureAssets(); updateAssets(); }
+    if (name === 'snapshot') { renderSnapshot(); }
+    if (name === 'method') { renderMethod(); }
+  });
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+
+function bindSeg(id, key, after){
+  const box = document.getElementById(id);
+  box.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    box.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    state[key] = b.dataset.val;
+    after();
+  });
+}
+bindSeg('calSeg', 'caliber', () => updateTrend());
+bindSeg('scaleSeg', 'scale', () => updateTrend());
+bindSeg('snapCalSeg', 'snapCaliber', () => renderSnapshot());
+
+// ---------------------------------------------------------------- selects
+function fillSelect(el, values, selected){
+  el.innerHTML = '';
+  values.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    if (v === selected) o.selected = true;
+    el.appendChild(o);
+  });
+}
+function fillIndicatorSelect(){
+  const sel = document.getElementById('indSel');
+  sel.innerHTML = '';
+  const groups = new Map();
+  INDS.forEach(i => {
+    if (!groups.has(i.cat)) groups.set(i.cat, []);
+    groups.get(i.cat).push(i);
+  });
+  groups.forEach((list, cat) => {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    list.forEach(i => {
+      const o = document.createElement('option');
+      o.value = i.name; o.textContent = i.name;
+      if (i.name === state.ind) o.selected = true;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+  sel.value = state.ind;
+  sel.addEventListener('change', () => { state.ind = sel.value; updateTrend(); });
+}
+function fillAllSelects(){
+  fillIndicatorSelect();
+  fillSelect(document.getElementById('snapPeriod'), PERIODS.slice().reverse(), state.snapPeriod);
+  fillSelect(document.getElementById('assetPeriod'), PERIODS.slice().reverse(), state.assetPeriod);
+  fillSelect(document.getElementById('assetCompany'), COMPANIES, state.assetCompany);
+  document.getElementById('snapPeriod').addEventListener('change', e => { state.snapPeriod = e.target.value; renderSnapshot(); });
+  document.getElementById('assetPeriod').addEventListener('change', e => { state.assetPeriod = e.target.value; updateAssetAll(); });
+  document.getElementById('assetCompany').addEventListener('change', e => { state.assetCompany = e.target.value; updateAssetCompany(); });
+}
+fillAllSelects();
+
+// ---------------------------------------------------------------- trend
+const trendCharts = new Map();
+let trendBuilt = false;
+function ensureTrend(){
+  if (trendBuilt) return;
+  const grid = document.getElementById('trendGrid');
+  COMPANIES.forEach((c, i) => {
+    const card = document.createElement('div');
+    card.className = 'facet';
+    card.innerHTML = '<div class="facet-head"><span class="fname">' + esc(c) + '</span><span class="fval" id="fv' + i + '"></span></div><div class="fchart" id="fc' + i + '"></div>';
+    grid.appendChild(card);
+    const ch = echarts.init(document.getElementById('fc' + i), null, {renderer: 'canvas'});
+    trendCharts.set(c, ch);
+  });
+  trendBuilt = true;
+}
+function facetOption(company, arr, lo, hi, p, meta){
+  const type = meta.type;
+  return {
+    animation: false,
+    textStyle: {fontFamily: FONT},
+    grid: {left: 42, right: 8, top: 8, bottom: 20},
+    tooltip: Object.assign(tooltipBase(p), {
+      trigger: 'axis',
+      confine: true,
+      axisPointer: {type: 'line', lineStyle: {color: p.axis, width: 1}},
+      formatter: ps => {
+        const i = ps[0].dataIndex;
+        return '<div style="font-weight:600;margin-bottom:2px">' + esc(company) + '</div>' +
+               '<div style="color:' + p.ink2 + '">' + PERIODS[i] + ' · <b style="color:' + p.ink + '">' +
+               fmt(arr[i], type) + '</b> ' + unitOf(type) + '</div>';
+      }
+    }),
+    xAxis: {
+      type: 'category', data: PERIODS, boundaryGap: false,
+      axisLine: {lineStyle: {color: p.axis}}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 9, interval: yearInterval, formatter: v => v.slice(0, 4), margin: 6},
+      splitLine: {show: false}
+    },
+    yAxis: {
+      type: 'value', min: lo, max: hi, splitNumber: 3,
+      axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: axisLabel(p, type),
+      splitLine: {lineStyle: {color: p.grid, width: 1}}
+    },
+    series: [{
+      name: company, type: 'line', data: arr, showSymbol: false, connectNulls: false,
+      lineStyle: {width: 2, color: p.accent}, itemStyle: {color: p.accent},
+      emphasis: {scale: 1.1},
+      markLine: (lo < 0 && hi > 0) ? {
+        silent: true, symbol: 'none',
+        lineStyle: {color: p.axis, type: 'dashed', width: 1},
+        label: {show: false}, data: [{yAxis: 0}]
+      } : undefined
+    }]
+  };
+}
+function updateTrend(){
+  ensureTrend();
+  trendCharts.forEach(ch => ch.resize());
+  const meta = IND[state.ind], p = P(), type = meta.type;
+  document.getElementById('trendTitle').textContent = '指标趋势 · ' + state.ind;
+  document.getElementById('trendSub').textContent = state.caliber + ' · 21 家公司 · 单位 ' + unitOf(type) + ' · ' + dirText(meta.dir);
+  document.getElementById('scaleNote').textContent = state.scale === 'unified'
+    ? '统一纵轴，按 5%–95% 分位截取；极端值悬停可见'
+    : '每家公司各自纵轴，按 5%–95% 分位截取';
+  const gr = rangeAll();
+  const globalRange = niceBounds(gr[0], gr[1]);
+  COMPANIES.forEach((c, i) => {
+    const arr = seriesFor(state.caliber, state.ind, c);
+    let lo, hi;
+    if (state.scale === 'unified') { lo = globalRange[0]; hi = globalRange[1]; }
+    else {
+      const r = robustRange(arr) || rangeAll();
+      [lo, hi] = niceBounds(r[0], r[1]);
+    }
+    trendCharts.get(c).setOption(facetOption(c, arr, lo, hi, p, meta), true);
+    const li = lastNonNull(arr);
+    const el = document.getElementById('fv' + i);
+    if (li < 0) { el.textContent = '未披露'; el.title = ''; }
+    else {
+      el.textContent = PERIODS[li] + ' · ' + fmt(arr[li], type);
+      el.title = PERIODS[li] + ' · ' + fmt(arr[li], type) + ' ' + unitOf(type);
+    }
+  });
+  renderTrendTable();
+}
+function renderTrendTable(){
+  const meta = IND[state.ind], type = meta.type;
+  let h = '<table class="data-table"><thead><tr><th class="sticky-col">公司</th>';
+  PERIODS.forEach(per => { h += '<th>' + per + '</th>'; });
+  h += '</tr></thead><tbody>';
+  COMPANIES.forEach(c => {
+    h += '<tr><th class="sticky-col">' + esc(c) + '</th>';
+    const arr = seriesFor(state.caliber, state.ind, c);
+    arr.forEach((v, j) => {
+      h += '<td title="' + PERIODS[j] + ' · ' + fmt(v, type) + ' ' + unitOf(type) + '">' + fmt(v, type) + '</td>';
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('trendTable').innerHTML = h;
+}
+
+// ---------------------------------------------------------------- assets
+const ASSET_STACK = [
+  {name: '固定资产', idx: 1},
+  {name: '存货', idx: 4},
+  {name: '在建工程', idx: 2},
+  {name: '生产性生物资产', idx: 3},
+  {name: '投资性房地产', idx: 0}
+];
+let assetAllChart = null, assetCompChart = null, assetShareChart = null;
+function ensureAssets(){
+  if (assetAllChart) return;
+  assetAllChart = echarts.init(document.getElementById('assetAll'), null, {renderer: 'canvas'});
+  assetCompChart = echarts.init(document.getElementById('assetComp'), null, {renderer: 'canvas'});
+  assetShareChart = echarts.init(document.getElementById('assetShare'), null, {renderer: 'canvas'});
+}
+function assetRow(company, period){
+  const idx = PERIODS.indexOf(period);
+  if (idx < 0) return null;
+  const arr = ASSET_ROWS[company];
+  return (arr && arr[idx]) || null;
+}
+function rowTotal(row){
+  if (!row) return null;
+  let s = 0, any = false;
+  for (let i = 0; i < 5; i++) if (!NUL(row[i])) { s += row[i]; any = true; }
+  return any ? s : null;
+}
+function updateAssets(){
+  ensureAssets();
+  assetCompChart.resize();
+  assetShareChart.resize();
+  updateAssetAll();
+  updateAssetCompany();
+}
+function updateAssetAll(){
+  const p = P(), per = state.assetPeriod;
+  const rows = COMPANIES.map(c => {
+    const r = assetRow(c, per);
+    return {c: c, r: r, total: rowTotal(r)};
+  }).filter(d => d.r && d.total !== null).sort((a, b) => b.total - a.total);
+  const missingNames = COMPANIES.filter(c => {
+    const r = assetRow(c, per);
+    return !r || rowTotal(r) === null;
+  });
+  document.getElementById('assetAllNote').textContent = missingNames.length
+    ? missingNames.join('、') + ' 未披露该期，未显示'
+    : '';
+  const el = document.getElementById('assetAll');
+  el.style.height = Math.max(480, rows.length * 30 + 170) + 'px';
+  assetAllChart.resize();
+  if (!rows.length) {
+    assetAllChart.clear();
+    assetAllChart.setOption({title: {text: '该报告期暂无资产数据', left: 'center', top: 'middle', textStyle: {color: p.muted, fontSize: 13, fontFamily: FONT}}});
+    document.getElementById('assetAllTable').innerHTML = '<div class="empty">该报告期暂无资产数据。</div>';
+    return;
+  }
+  const option = {
+    animationDuration: 280,
+    textStyle: {fontFamily: FONT},
+    color: p.asset,
+    grid: {left: 78, right: 84, top: 42, bottom: 66},
+    legend: {top: 2, left: 0, data: ASSET_STACK.map(x => x.name), itemWidth: 10, itemHeight: 10, itemGap: 14, textStyle: {color: p.ink2, fontSize: 11}},
+    dataZoom: [
+      {type: 'inside', xAxisIndex: 0, filterMode: 'none'},
+      {type: 'slider', xAxisIndex: 0, filterMode: 'none', height: 14, bottom: 8, left: 78, right: 84,
+       borderColor: 'transparent', backgroundColor: 'transparent',
+       fillerColor: isDark() ? 'rgba(57,135,229,.20)' : 'rgba(42,120,214,.12)',
+       handleStyle: {color: p.accent}, moveHandleStyle: {color: p.accent},
+       textStyle: {color: p.muted, fontSize: 9}, brushSelect: false}
+    ],
+    tooltip: Object.assign(tooltipBase(p), {
+      trigger: 'axis',
+      axisPointer: {type: 'shadow'},
+      formatter: ps => {
+        const d = rows[ps[0].dataIndex];
+        if (!d) return '';
+        let s = '<div style="font-weight:600;margin-bottom:4px">' + esc(d.c) + ' · ' + per + '</div>';
+        ASSET_STACK.forEach((it, k) => {
+          const v = d.r[it.idx];
+          s += '<div style="display:flex;justify-content:space-between;gap:20px;line-height:1.8">' +
+               '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + p.asset[k] + ';margin-right:6px"></i>' + it.name + '</span>' +
+               '<b>' + fmtYi(v) + '</b></div>';
+        });
+        s += '<div style="display:flex;justify-content:space-between;gap:20px;border-top:1px solid ' + p.grid + ';margin-top:4px;padding-top:4px">' +
+             '<span>五项合计</span><b>' + fmtYi(d.total) + ' 亿元</b></div>';
+        if (d.r[5]) {
+          s += '<div style="display:flex;justify-content:space-between;gap:20px"><span>占总资产</span><b>' + fmtPct(d.total / d.r[5]) + '</b></div>';
+        }
+        return s;
+      }
+    }),
+    xAxis: {
+      type: 'value', name: '亿元', nameLocation: 'end', nameGap: 12,
+      nameTextStyle: {color: p.muted, fontSize: 10},
+      axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 10, formatter: v => Number(v).toLocaleString('zh-CN')},
+      splitLine: {lineStyle: {color: p.grid, width: 1}}
+    },
+    yAxis: {
+      type: 'category', inverse: true,
+      data: rows.map(d => d.c),
+      axisLine: {lineStyle: {color: p.axis}}, axisTick: {show: false},
+      axisLabel: {color: p.ink2, fontSize: 12}
+    },
+    series: ASSET_STACK.map((it, k) => ({
+      name: it.name, type: 'bar', stack: 'total', barMaxWidth: 17,
+      data: rows.map(d => { const v = d.r[it.idx]; return NUL(v) ? 0 : v; }),
+      itemStyle: {color: p.asset[k], borderColor: p.surface, borderWidth: 1},
+      emphasis: {focus: 'series'}
+    })).concat([{
+      name: '合计', type: 'custom', silent: true, z: 10,
+      data: rows.map((d, i) => [d.total, i]),
+      encode: {x: 0, y: 1},
+      renderItem: (params, api) => {
+        const pt = api.coord([api.value(0), api.value(1)]);
+        return {
+          type: 'text',
+          style: {
+            text: Number(api.value(0)).toLocaleString('zh-CN', {maximumFractionDigits: 0}),
+            x: pt[0] + 8, y: pt[1],
+            fill: p.ink2, fontSize: 11, fontFamily: FONT,
+            textAlign: 'left', textVerticalAlign: 'middle'
+          }
+        };
+      },
+      tooltip: {show: false}
+    }])
+  };
+  assetAllChart.setOption(option, true);
+  renderAssetAllTable(rows);
+}
+function renderAssetAllTable(rows){
+  let h = '<table class="data-table"><thead><tr><th class="sticky-col">公司</th>' +
+          ASSET_ITEMS.map(x => '<th>' + x + '</th>').join('') +
+          '<th>五项合计</th><th>资产总计</th><th>五项占比</th></tr></thead><tbody>';
+  rows.forEach(d => {
+    const r = d.r;
+    h += '<tr><th class="sticky-col">' + esc(d.c) + '</th>' +
+         r.slice(0, 5).map(v => '<td>' + fmtYi(v) + '</td>').join('') +
+         '<td>' + fmtYi(d.total) + '</td><td>' + fmtYi(r[5]) + '</td><td>' + fmtPct(r[5] ? d.total / r[5] : null) + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('assetAllTable').innerHTML = h;
+}
+function updateAssetCompany(){
+  const p = P(), company = state.assetCompany;
+  const rows = PERIODS.map((per, i) => {
+    const arr = ASSET_ROWS[company];
+    return (arr && arr[i]) || null;
+  });
+  const option = {
+    animationDuration: 260,
+    textStyle: {fontFamily: FONT},
+    color: p.asset,
+    grid: {left: 54, right: 18, top: 42, bottom: 28},
+    legend: {top: 2, left: 0, itemWidth: 10, itemHeight: 10, itemGap: 14, textStyle: {color: p.ink2, fontSize: 11}},
+    tooltip: Object.assign(tooltipBase(p), {
+      trigger: 'axis',
+      axisPointer: {type: 'shadow'},
+      formatter: ps => {
+        const i = ps[0].dataIndex, r = rows[i];
+        let s = '<div style="font-weight:600;margin-bottom:4px">' + esc(company) + ' · ' + PERIODS[i] + '</div>';
+        const total = rowTotal(r);
+        if (!r || total === null) return s + '<div style="color:' + p.muted + '">未披露</div>';
+        ASSET_STACK.forEach((it, k) => {
+          s += '<div style="display:flex;justify-content:space-between;gap:20px;line-height:1.8">' +
+               '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + p.asset[k] + ';margin-right:6px"></i>' + it.name + '</span>' +
+               '<b>' + fmtYi(r[it.idx]) + '</b></div>';
+        });
+        s += '<div style="display:flex;justify-content:space-between;gap:20px;border-top:1px solid ' + p.grid + ';margin-top:4px;padding-top:4px">' +
+             '<span>五项合计</span><b>' + fmtYi(total) + ' 亿元</b></div>';
+        if (r[5]) {
+          s += '<div style="display:flex;justify-content:space-between;gap:20px"><span>占总资产</span><b>' + fmtPct(total / r[5]) + '</b></div>';
+        }
+        return s;
+      }
+    }),
+    xAxis: {
+      type: 'category', data: PERIODS, boundaryGap: true,
+      axisLine: {lineStyle: {color: p.axis}}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 9, interval: yearInterval, formatter: v => v.slice(0, 4), margin: 6}
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 10},
+      splitLine: {lineStyle: {color: p.grid, width: 1}}
+    },
+    series: ASSET_STACK.map((it, k) => ({
+      name: it.name, type: 'bar', stack: 'total', barMaxWidth: 22,
+      data: rows.map(r => r ? r[it.idx] : null),
+      itemStyle: {color: p.asset[k], borderColor: p.surface, borderWidth: 1},
+      emphasis: {focus: 'series'}
+    }))
+  };
+  assetCompChart.setOption(option, true);
+
+  const totalShare = rows.map(r => r && r[5] ? rowTotal(r) / r[5] : null);
+  const fixedShare = rows.map(r => r && r[5] ? r[1] / r[5] : null);
+  const invtyShare = rows.map(r => r && r[5] ? r[4] / r[5] : null);
+  const shareOption = {
+    animationDuration: 260,
+    textStyle: {fontFamily: FONT},
+    grid: {left: 52, right: 74, top: 42, bottom: 28},
+    legend: {top: 2, left: 0, itemWidth: 10, itemHeight: 10, itemGap: 14, textStyle: {color: p.ink2, fontSize: 11}},
+    tooltip: Object.assign(tooltipBase(p), {
+      trigger: 'axis',
+      axisPointer: {type: 'line', lineStyle: {color: p.axis, width: 1}},
+      formatter: ps => {
+        const i = ps[0].dataIndex;
+        let s = '<div style="font-weight:600;margin-bottom:4px">' + PERIODS[i] + '</div>';
+        ps.forEach(o => {
+          s += '<div style="display:flex;justify-content:space-between;gap:20px;line-height:1.8">' +
+               '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + o.color + ';margin-right:6px"></i>' + o.seriesName + '</span>' +
+               '<b>' + (NUL(o.value) ? '—' : (o.value * 100).toFixed(2) + '%') + '</b></div>';
+        });
+        return s;
+      }
+    }),
+    xAxis: {
+      type: 'category', data: PERIODS, boundaryGap: false,
+      axisLine: {lineStyle: {color: p.axis}}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 9, interval: yearInterval, formatter: v => v.slice(0, 4), margin: 6}
+    },
+    yAxis: {
+      type: 'value', axisLine: {show: false}, axisTick: {show: false},
+      axisLabel: {color: p.muted, fontSize: 10, formatter: v => (v * 100).toFixed(0) + '%'},
+      splitLine: {lineStyle: {color: p.grid, width: 1}}
+    },
+    series: [
+      {name: '五项合计', type: 'line', data: totalShare, showSymbol: false, connectNulls: false,
+       lineStyle: {width: 2, color: p.ink2}, itemStyle: {color: p.ink2}, emphasis: {focus: 'series'},
+       endLabel: {show: true, formatter: '五项合计', color: p.ink2, fontSize: 10, distance: 4}},
+      {name: '固定资产', type: 'line', data: fixedShare, showSymbol: false, connectNulls: false,
+       lineStyle: {width: 2, color: p.asset[0]}, itemStyle: {color: p.asset[0]}, emphasis: {focus: 'series'},
+       endLabel: {show: true, formatter: '固定资产', color: p.asset[0], fontSize: 10, distance: 4}},
+      {name: '存货', type: 'line', data: invtyShare, showSymbol: false, connectNulls: false,
+       lineStyle: {width: 2, color: p.asset[1]}, itemStyle: {color: p.asset[1]}, emphasis: {focus: 'series'},
+       endLabel: {show: true, formatter: '存货', color: p.asset[1], fontSize: 10, distance: 4}}
+    ]
+  };
+  assetShareChart.setOption(shareOption, true);
+  renderAssetCompTable(company, rows);
+}
+function renderAssetCompTable(company, rows){
+  let h = '<table class="data-table"><thead><tr><th class="sticky-col">期间</th>' +
+          ASSET_ITEMS.map(x => '<th>' + x + '</th>').join('') +
+          '<th>五项合计</th><th>资产总计</th><th>五项占比</th><th>固定资产占比</th><th>存货占比</th></tr></thead><tbody>';
+  PERIODS.forEach((per, i) => {
+    const r = rows[i], total = rowTotal(r);
+    h += '<tr><th class="sticky-col">' + per + '</th>' +
+         (r ? r.slice(0, 5).map(v => '<td>' + fmtYi(v) + '</td>').join('') : '<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>') +
+         '<td>' + fmtYi(total) + '</td><td>' + (r ? fmtYi(r[5]) : '—') + '</td>' +
+         '<td>' + fmtPct(r && r[5] ? total / r[5] : null) + '</td>' +
+         '<td>' + fmtPct(r && r[5] ? r[1] / r[5] : null) + '</td>' +
+         '<td>' + fmtPct(r && r[5] ? r[4] / r[5] : null) + '</td></tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('assetCompTable').innerHTML = h;
+}
+
+// ---------------------------------------------------------------- snapshot
+function renderSnapshot(){
+  const p = P(), pidx = PERIODS.indexOf(state.snapPeriod);
+  const cols = INDS.map(ind => {
+    const vals = COMPANIES.map((c, i) => {
+      const arr = seriesFor(state.snapCaliber, ind.name, c);
+      return {i: i, v: arr[pidx]};
+    }).filter(o => !NUL(o.v));
+    const sorted = vals.slice().sort((a, b) => a.v - b.v);
+    vals.forEach(o => {
+      let t = sorted.length > 1 ? sorted.findIndex(x => x.i === o.i) / (sorted.length - 1) : 0.5;
+      if (ind.dir < 0) t = 1 - t;
+      const bg = p.ramp[Math.round(t * (p.ramp.length - 1))];
+      o.bg = bg; o.fg = textOn(bg);
+    });
+    return new Map(vals.map(o => [o.i, o]));
+  });
+  const groups = [];
+  INDS.forEach(ind => {
+    const g = groups[groups.length - 1];
+    if (g && g.cat === ind.cat) g.n++;
+    else groups.push({cat: ind.cat, n: 1});
+  });
+  let h = '<table class="matrix"><thead><tr><th class="corner" rowspan="2">公司</th>';
+  groups.forEach(g => { h += '<th colspan="' + g.n + '">' + esc(g.cat) + '</th>'; });
+  h += '</tr><tr>';
+  INDS.forEach(ind => {
+    h += '<th>' + esc(ind.name) + '<span class="unit">' + unitOf(ind.type) + '</span></th>';
+  });
+  h += '</tr></thead><tbody>';
+  COMPANIES.forEach((c, ci) => {
+    h += '<tr><th>' + esc(c) + '</th>';
+    INDS.forEach((ind, k) => {
+      const arr = seriesFor(state.snapCaliber, ind.name, c);
+      const v = arr[pidx];
+      if (NUL(v)) { h += '<td class="missing">—</td>'; return; }
+      const o = cols[k].get(ci);
+      h += '<td style="background:' + o.bg + ';color:' + o.fg + '" title="' +
+           esc(ind.name + ' · ' + fmt(v, ind.type) + ' ' + unitOf(ind.type) + ' · ' + dirText(ind.dir)) + '">' +
+           fmt(v, ind.type) + '</td>';
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('snapWrap').innerHTML = h;
+  document.getElementById('rampBar').style.background = 'linear-gradient(90deg,' + p.ramp.join(',') + ')';
+}
+document.getElementById('snapExport').addEventListener('click', () => {
+  const pidx = PERIODS.indexOf(state.snapPeriod);
+  const rows = [['公司'].concat(INDS.map(i => i.name + '(' + unitOf(i.type) + ')'))];
+  COMPANIES.forEach(c => {
+    const row = [c];
+    INDS.forEach(ind => {
+      const v = seriesFor(state.snapCaliber, ind.name, c)[pidx];
+      row.push(NUL(v) ? '' : ind.type === 'pct' ? (v * 100).toFixed(4) : v.toFixed(4));
+    });
+    rows.push(row);
+  });
+  const csv = rows.map(r => r.map(x => {
+    const s = String(x);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], {type: 'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '上市猪企指标快照_' + state.snapCaliber + '_' + state.snapPeriod + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1200);
+});
+
+// ---------------------------------------------------------------- method
+let methodRendered = false;
+function renderMethod(){
+  if (methodRendered) return;
+  const rows = INDS.map(ind =>
+    '<tr><td><span class="cat-badge">' + esc(ind.cat) + '</span></td>' +
+    '<td><b>' + esc(ind.name) + '</b></td>' +
+    '<td>' + dirText(ind.dir) + '</td>' +
+    '<td>' + unitOf(ind.type) + '</td>' +
+    '<td>' + esc(ind.formula) + (ind.note ? '<br><span class="small">' + esc(ind.note) + '</span>' : '') + '</td></tr>'
+  ).join('');
+  document.getElementById('methodTable').innerHTML =
+    '<thead><tr><th style="width:88px">分类</th><th style="width:140px">指标</th><th style="width:76px">方向</th><th style="width:70px">单位</th><th>公式与说明</th></tr></thead><tbody>' +
+    rows + '</tbody>';
+  methodRendered = true;
+}
+
+// ---------------------------------------------------------------- theme + resize
+function syncThemeBtn(){
+  document.getElementById('themeBtn').textContent = isDark() ? '浅色模式' : '深色模式';
+}
+syncThemeBtn();
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const dark = !isDark();
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  try { localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light'); } catch (e) {}
+  syncThemeBtn();
+  if (trendBuilt) updateTrend();
+  if (assetAllChart) updateAssets();
+  renderSnapshot();
+});
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    trendCharts.forEach(ch => ch.resize());
+    if (assetAllChart) { assetAllChart.resize(); assetCompChart.resize(); assetShareChart.resize(); }
+  }, 120);
+});
+
+// ---------------------------------------------------------------- start
+renderMethod();
+activate('trend');
+})();
+</script>
+</body>
+</html>

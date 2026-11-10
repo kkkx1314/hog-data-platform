@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 XLSX = ROOT / "output" / "上市公司财务指标_底表.xlsx"
 TPL = ROOT / "output" / "上市公司财务指标_趋势与资产_模板.xlsx"
+HTML = ROOT / "output" / "上市公司财务指标_趋势与资产_看板.html"
 
 st.set_page_config(page_title="上市猪企财务质量面板", page_icon="🐖", layout="wide")
 
@@ -350,7 +351,7 @@ with tab4:
     show = df[["公司", "期间"] + IND_NAMES].sort_values(
         ["公司", "期间"], key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
     st.dataframe(show, width="stretch", hide_index=True, height=520)
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.download_button("下载筛选数据（CSV）",
                        show.to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"上市猪企指标_{caliber}.csv", mime="text/csv")
@@ -362,7 +363,10 @@ with tab4:
         c3.download_button("下载线下趋势模板", TPL.read_bytes(),
                            file_name="上市公司财务指标_趋势与资产_模板.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.caption("线下趋势模板含 01_指标趋势（全部公司）/ 02_五项资产 / 03_指标快照 三个可下拉联动的页签，可离线使用。")
+    if HTML.exists():
+        c4.download_button("下载离线 HTML 看板", HTML.read_bytes(),
+                           file_name="上市公司财务指标_趋势与资产_看板.html", mime="text/html")
+    st.caption("线下趋势模板含 01_指标趋势（全部公司）/ 02_五项资产 / 03_指标快照 三个可下拉联动的页签；离线 HTML 看板为单文件，21 家小多图 + 资产对比 + 指标快照，可直接分发。")
 
 # ---------------------------------------------------------------- 口径
 with tab5:
