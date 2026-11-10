@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 XLSX = ROOT / "output" / "上市公司财务指标_底表.xlsx"
+TPL = ROOT / "output" / "上市公司财务指标_趋势与资产_模板.xlsx"
 
 st.set_page_config(page_title="上市猪企财务质量面板", page_icon="🐖", layout="wide")
 
@@ -120,9 +121,6 @@ df = df[mask].sort_values(["公司", "期间"], key=lambda s: s.map(
     lambda x: all_companies.index(x) if x in all_companies else 0) if s.name == "公司" else s.map(period_key))
 periods = sorted(df["期间"].unique(), key=period_key)
 
-assets = assets_all[assets_all["公司"].isin(companies)].copy()
-assets = assets[assets["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))]
-
 # ---------------------------------------------------------------- 标题
 st.title("上市猪企财务质量面板")
 st.caption(
@@ -212,7 +210,10 @@ with tab1:
 
 # ---------------------------------------------------------------- 趋势
 with tab2:
-    st.subheader("指标趋势")
+    st.subheader("指标趋势（全部公司）")
+    st.caption("趋势图与数据表默认覆盖全部公司，不受左侧“公司”筛选影响；如需聚焦可在此临时减少。")
+    tcompanies = st.multiselect("趋势公司", all_companies, default=all_companies,
+                                key="trend_companies")
     c1, c2 = st.columns([1, 2])
     with c1:
         cat_pick = st.multiselect("指标分类", CATS, default=CATS)
@@ -221,9 +222,14 @@ with tab2:
         pick = st.multiselect("指标（最多 6 个）", available,
                               default=[i for i in ["毛利率", "核心利润率", "归母扣非ROE", "有息负债率"] if i in available][:4],
                               max_selections=6)
-    if not pick:
+    if not tcompanies:
+        st.info("请选择至少一家公司。")
+    elif not pick:
         st.info("请选择至少一个指标。")
     else:
+        tdf = (q_all if caliber == "单季" else c_all).copy()
+        tdf = tdf[tdf["公司"].isin(tcompanies)
+                  & tdf["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))]
         n = len(pick)
         cols = 2 if n > 1 else 1
         rows = int(np.ceil(n / cols))
@@ -231,8 +237,8 @@ with tab2:
                             vertical_spacing=0.18, horizontal_spacing=0.10)
         for k, ind in enumerate(pick):
             r, c = divmod(k, cols)
-            for comp in companies:
-                sub = df[df["公司"] == comp].sort_values("期间", key=lambda s: s.map(period_key))
+            for comp in tcompanies:
+                sub = tdf[tdf["公司"] == comp].sort_values("期间", key=lambda s: s.map(period_key))
                 fig.add_trace(
                     go.Scatter(x=sub["期间"], y=sub[ind], name=comp, mode="lines+markers",
                                line=dict(color=COMPANY_COLOR.get(comp), width=2),
@@ -241,7 +247,7 @@ with tab2:
                     row=r + 1, col=c + 1)
             typ = IND_META[ind]["type"]
             # y 轴顶部留白，避免折线顶到子图标题（如“核心利润率”）
-            vals = pd.to_numeric(df[ind], errors="coerce").dropna()
+            vals = pd.to_numeric(tdf[ind], errors="coerce").dropna()
             if not vals.empty:
                 lo, hi = float(vals.min()), float(vals.max())
                 pad = (hi - lo) * 0.18 if hi > lo else max(abs(hi) * 0.1, 0.05)
@@ -252,61 +258,91 @@ with tab2:
                              range=yrange, row=r + 1, col=c + 1)
             fig.update_xaxes(type="category", tickangle=-45, row=r + 1, col=c + 1)
         fig.update_layout(height=300 * rows, template="plotly_white",
-                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                          legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=10)),
                           margin=dict(l=10, r=10, t=80, b=10))
         st.plotly_chart(fig, width="stretch")
 
-        st.markdown("**数据表**")
-        tbl = df[df["公司"].isin(companies)][["公司", "期间"] + pick].sort_values(
+        st.markdown("**数据表（全部公司）**")
+        tbl = tdf[["公司", "期间"] + pick].sort_values(
             ["公司", "期间"], key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
-        st.dataframe(tbl, width="stretch", hide_index=True)
+        st.dataframe(tbl, width="stretch", hide_index=True, height=420)
 
 # ---------------------------------------------------------------- 资产
 with tab3:
-    st.subheader("五项资产结构")
-    comp_pick = st.selectbox("公司", companies, index=0, key="asset_company")
-    a = assets[assets["公司"] == comp_pick].sort_values("期间", key=lambda s: s.map(period_key)).copy()
-    if a.empty:
-        st.info("该区间无数据。")
+    st.subheader("五项资产（全部公司）")
+    st.caption("首图为全部公司在同一报告期的资产结构横向对比，不受左侧“公司”筛选影响；下方可切换单家查看趋势与明细。")
+    items = ["投资性房地产", "固定资产", "在建工程", "生产性生物资产", "存货"]
+    colors = {"固定资产": "#2E5EAA", "在建工程": "#7FA8D9", "生产性生物资产": "#2A9D8F",
+              "存货": "#E9C46A", "投资性房地产": "#C0392B"}
+    ap = [p for p in sorted(assets_all["期间"].unique(), key=period_key)
+          if period_key(pr[0]) <= period_key(p) <= period_key(pr[1])]
+    if not ap:
+        st.info("该区间无资产数据。")
     else:
-        items = ["投资性房地产", "固定资产", "在建工程", "生产性生物资产", "存货"]
-        colors = {"固定资产": "#2E5EAA", "在建工程": "#7FA8D9", "生产性生物资产": "#2A9D8F",
-                  "存货": "#E9C46A", "投资性房地产": "#C0392B"}
-        fig = go.Figure()
-        for it in items:
-            fig.add_trace(go.Bar(x=a["期间"], y=a[it] / 1e8, name=it,
-                                 marker_color=colors[it],
-                                 hovertemplate=f"{it}<br>%{{x}}<br>%{{y:,.1f}} 亿元<extra></extra>"))
-        fig.update_layout(barmode="stack", height=420, template="plotly_white",
-                          yaxis_title="亿元", legend=dict(orientation="h", y=1.06),
-                          margin=dict(l=10, r=10, t=40, b=10))
-        st.plotly_chart(fig, width="stretch")
+        sel_ap = st.selectbox("对比报告期", ap[::-1], index=0, key="asset_period_all")
+        snapA = assets_all[(assets_all["期间"] == sel_ap)
+                           & assets_all["公司"].isin(all_companies)].copy()
+        snapA = snapA.dropna(subset=["五项合计"]).sort_values("五项合计")
+        if snapA.empty:
+            st.info("该报告期无数据。")
+        else:
+            figA = go.Figure()
+            for it in items:
+                figA.add_trace(go.Bar(
+                    y=snapA["公司"], x=snapA[it] / 1e8, name=it, orientation="h",
+                    marker_color=colors[it],
+                    hovertemplate=f"{it}<br>%{{y}}<br>%{{x:,.1f}} 亿元<extra></extra>"))
+            figA.update_layout(barmode="stack",
+                               height=max(460, 26 * len(snapA) + 140),
+                               template="plotly_white", xaxis_title="亿元",
+                               legend=dict(orientation="h", y=1.06),
+                               margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(figA, width="stretch")
+            st.caption(f"{sel_ap} 期末；按五项合计从大到小排列（图中自上而下）。")
 
-        fig2 = go.Figure()
-        for col, color, name in [
-            ("五项占总资产", "#2E5EAA", "五项合计/总资产"),
-            ("固定资产占总资产", "#7FA8D9", "固定资产/总资产"),
-            ("存货占总资产", "#E9C46A", "存货/总资产"),
-        ]:
-            fig2.add_trace(go.Scatter(x=a["期间"], y=a[col], name=name, mode="lines+markers",
-                                      line=dict(color=color, width=2), marker=dict(size=5)))
-        fig2.update_layout(height=360, template="plotly_white", yaxis_tickformat=".0%",
-                           yaxis_title="占总资产", legend=dict(orientation="h", y=1.08),
-                           margin=dict(l=10, r=10, t=30, b=10))
-        st.plotly_chart(fig2, width="stretch")
+        st.markdown("---")
+        comp_pick = st.selectbox("单家公司明细", all_companies, index=0, key="asset_company")
+        a = assets_all[(assets_all["公司"] == comp_pick)
+                       & assets_all["期间"].map(lambda x: period_key(pr[0]) <= period_key(x) <= period_key(pr[1]))].copy()
+        a = a.sort_values("期间", key=lambda s: s.map(period_key))
+        if a.empty:
+            st.info("该区间无数据。")
+        else:
+            fig = go.Figure()
+            for it in items:
+                fig.add_trace(go.Bar(x=a["期间"], y=a[it] / 1e8, name=it,
+                                     marker_color=colors[it],
+                                     hovertemplate=f"{it}<br>%{{x}}<br>%{{y:,.1f}} 亿元<extra></extra>"))
+            fig.update_layout(barmode="stack", height=420, template="plotly_white",
+                              yaxis_title="亿元", legend=dict(orientation="h", y=1.06),
+                              margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig, width="stretch")
 
-        latest = a.iloc[-1]
-        st.markdown(f"**{comp_pick} · {latest['期间']} 五项资产**")
-        cards = st.columns(5)
-        for col, it in zip(cards, items):
-            col.metric(it, f"{latest[it]/1e8:,.1f} 亿",
-                       f"占总资产 {latest[it]/latest['资产总计']*100:.1f}%"
-                       if pd.notna(latest["资产总计"]) and latest["资产总计"] else None)
-        st.dataframe(a[["公司", "期间"] + items + ["五项合计", "资产总计", "五项占总资产",
-                                                  "固定资产占总资产", "存货占总资产",
-                                                  "在建工程/固定资产", "五项合计同比"]]
-                     .assign(**{c: a[c] / 1e8 for c in items + ["五项合计", "资产总计"]}),
-                     width="stretch", hide_index=True)
+            fig2 = go.Figure()
+            for col, color, name in [
+                ("五项占总资产", "#2E5EAA", "五项合计/总资产"),
+                ("固定资产占总资产", "#7FA8D9", "固定资产/总资产"),
+                ("存货占总资产", "#E9C46A", "存货/总资产"),
+            ]:
+                fig2.add_trace(go.Scatter(x=a["期间"], y=a[col], name=name, mode="lines+markers",
+                                          line=dict(color=color, width=2), marker=dict(size=5)))
+            fig2.update_layout(height=360, template="plotly_white", yaxis_tickformat=".0%",
+                               yaxis_title="占总资产", legend=dict(orientation="h", y=1.08),
+                               margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig2, width="stretch")
+
+            latest = a.iloc[-1]
+            st.markdown(f"**{comp_pick} · {latest['期间']} 五项资产**")
+            cards = st.columns(5)
+            for col, it in zip(cards, items):
+                col.metric(it, f"{latest[it]/1e8:,.1f} 亿",
+                           f"占总资产 {latest[it]/latest['资产总计']*100:.1f}%"
+                           if pd.notna(latest["资产总计"]) and latest["资产总计"] else None)
+            st.dataframe(a[["公司", "期间"] + items + ["五项合计", "资产总计", "五项占总资产",
+                                                      "固定资产占总资产", "存货占总资产",
+                                                      "在建工程/固定资产", "五项合计同比"]]
+                         .assign(**{c: a[c] / 1e8 for c in items + ["五项合计", "资产总计"]}),
+                         width="stretch", hide_index=True)
 
 # ---------------------------------------------------------------- 明细
 with tab4:
@@ -314,7 +350,7 @@ with tab4:
     show = df[["公司", "期间"] + IND_NAMES].sort_values(
         ["公司", "期间"], key=lambda s: s.map(lambda x: all_companies.index(x)) if s.name == "公司" else s.map(period_key))
     st.dataframe(show, width="stretch", hide_index=True, height=520)
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.download_button("下载筛选数据（CSV）",
                        show.to_csv(index=False).encode("utf-8-sig"),
                        file_name=f"上市猪企指标_{caliber}.csv", mime="text/csv")
@@ -322,6 +358,11 @@ with tab4:
         c2.download_button("下载完整 Excel 底表", XLSX.read_bytes(),
                            file_name="上市公司财务指标_底表.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    if TPL.exists():
+        c3.download_button("下载线下趋势模板", TPL.read_bytes(),
+                           file_name="上市公司财务指标_趋势与资产_模板.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.caption("线下趋势模板含 01_指标趋势（全部公司）/ 02_五项资产 / 03_指标快照 三个可下拉联动的页签，可离线使用。")
 
 # ---------------------------------------------------------------- 口径
 with tab5:
