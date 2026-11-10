@@ -74,14 +74,14 @@ select:focus-visible,button:focus-visible,summary:focus-visible{outline:2px soli
 .chart{width:100%;height:340px}
 .chart.tall{height:620px}
 .industry-card{padding-bottom:14px}
-.industry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px;margin-top:10px}
+.industry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:10px;margin-top:10px}
 .industry-cell{display:block;width:100%;text-align:left;background:var(--plane);border:1px solid var(--border);border-radius:9px;padding:7px 8px 3px;cursor:pointer;font:inherit;color:inherit;transition:border-color .12s,box-shadow .12s}
 .industry-cell:hover{border-color:var(--axis)}
 .industry-cell.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
 .industry-head{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:1px}
 .industry-name{font-size:11.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .industry-val{font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
-.industry-chart{height:52px}
+.industry-chart{height:54px;overflow:hidden}
 .cmp-controls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin:6px 0 8px}
 .cmp-company-wrap{display:flex;flex-direction:column;gap:6px;flex:1 1 430px;min-width:260px}
 .cmp-company-wrap>label{font-size:11px;color:var(--muted);letter-spacing:.3px}
@@ -200,8 +200,15 @@ footer b{color:var(--ink2);font-weight:600}
       <div class="control">
         <label>纵轴</label>
         <div class="seg" id="scaleSeg" role="group" aria-label="纵轴范围">
-          <button type="button" data-val="unified" class="active">统一量程</button>
-          <button type="button" data-val="facet">各自量程</button>
+          <button type="button" data-val="unified">统一量程</button>
+          <button type="button" data-val="facet" class="active">各自量程</button>
+        </div>
+      </div>
+      <div class="control">
+        <label>范围</label>
+        <div class="seg" id="rangeSeg" role="group" aria-label="纵轴取值范围">
+          <button type="button" data-val="full" class="active">全量程</button>
+          <button type="button" data-val="clip">5%–95%</button>
         </div>
       </div>
     </div>
@@ -209,7 +216,7 @@ footer b{color:var(--ink2);font-weight:600}
       <div class="chart-head">
         <div>
           <h2>行业合计 · 20 项指标</h2>
-          <p>每个小图是该指标的行业口径汇总；比率类按合并分子/合并分母计算，不是把各家比率简单相加。点击任意小图切换下方主图。</p>
+          <p>每个小图是该指标的行业口径汇总；比率类按合并分子/合并分母（等价于按分母加权）计算，不是各家比率的简单平均。点击任意小图切换下方主图。</p>
         </div>
         <div class="note" id="industryNote"></div>
       </div>
@@ -239,6 +246,13 @@ footer b{color:var(--ink2);font-weight:600}
         <div class="cmp-company-wrap">
           <label>公司（点击切换）</label>
           <div class="chip-row" id="cmpCompanies"></div>
+        </div>
+        <div class="control">
+          <label>纵轴范围</label>
+          <div class="seg" id="cmpRangeSeg" role="group" aria-label="对比图纵轴范围">
+            <button type="button" data-val="full" class="active">全量程</button>
+            <button type="button" data-val="clip">5%–95%</button>
+          </div>
         </div>
         <div class="cmp-actions">
           <button type="button" class="range-all" id="cmpAll">全选</button>
@@ -469,7 +483,8 @@ const state = {
   ind: INDS[0].name,
   cmpInd: INDS[0].name,
   cmpCompanies: CMP_DEFAULT.slice(),
-  scale: 'unified',
+  scale: 'facet',
+  range: 'full',
   assetPeriod: PERIODS[PERIODS.length - 1],
   assetCompany: COMPANIES[0],
   assetItem: '固定资产',
@@ -562,6 +577,17 @@ function robustRange(values){
   const pad = (hi - lo) * 0.08 || Math.abs(hi || 1) * 0.1;
   return [lo - pad, hi + pad];
 }
+function fullRange(values){
+  const v = values.filter(x => !NUL(x));
+  if (!v.length) return null;
+  let lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+  if (lo === hi) { const pad = Math.abs(lo) * 0.1 || 1; lo -= pad; hi += pad; }
+  const pad = (hi - lo) * 0.08 || Math.abs(hi || 1) * 0.1;
+  return [lo - pad, hi + pad];
+}
+function valueRange(values){
+  return (state.range === 'clip' ? robustRange(values) : fullRange(values)) || [-1, 1];
+}
 function niceStep(x){
   if (!isFinite(x) || x <= 0) return 1;
   const exp = Math.floor(Math.log10(x));
@@ -581,7 +607,7 @@ function rangeAll(){
     const arr = seriesFor(state.caliber, state.ind, c);
     arr.forEach(v => { if (!NUL(v)) all.push(v); });
   });
-  return robustRange(all) || [-1, 1];
+  return valueRange(all);
 }
 function lum(hex){
   const c = hex.replace('#', '');
@@ -642,6 +668,21 @@ function bindSeg(id, key, after){
 }
 bindSeg('calSeg', 'caliber', () => updateTrend());
 bindSeg('scaleSeg', 'scale', () => updateTrend());
+function setRange(val){
+  state.range = val;
+  ['rangeSeg', 'cmpRangeSeg'].forEach(id => {
+    const box = document.getElementById(id);
+    if (box) box.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.val === val));
+  });
+  updateTrend();
+}
+['rangeSeg', 'cmpRangeSeg'].forEach(id => {
+  const box = document.getElementById(id);
+  if (box) box.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b) setRange(b.dataset.val);
+  });
+});
 bindSeg('snapCalSeg', 'snapCaliber', () => renderSnapshot());
 bindSeg('assetItemBasisSeg', 'assetItemBasis', () => updateAssetItem());
 
@@ -786,7 +827,7 @@ function facetOption(company, arr, lo, hi, p, meta){
     yAxis: {
       type: 'value', min: lo, max: hi, splitNumber: 3,
       axisLine: {show: false}, axisTick: {show: false},
-      axisLabel: axisLabel(p, type),
+      axisLabel: Object.assign(axisLabel(p, type), {showMinLabel: false, showMaxLabel: false}),
       splitLine: {lineStyle: {color: p.grid, width: 1}}
     },
     series: [{
@@ -807,18 +848,17 @@ function updateTrend(){
   const meta = IND[state.ind], p = P(), type = meta.type;
   document.getElementById('trendTitle').textContent = '指标趋势 · ' + state.ind;
   document.getElementById('trendSub').textContent = state.caliber + ' · 21 家公司 · 单位 ' + unitOf(type) + ' · ' + dirText(meta.dir);
+  const rangeText = state.range === 'clip' ? '5%–95% 分位' : '全量程';
   document.getElementById('scaleNote').textContent = state.scale === 'unified'
-    ? '统一纵轴，按 5%–95% 分位截取；极端值悬停可见'
-    : '每家公司各自纵轴，按 5%–95% 分位截取';
-  const gr = rangeAll();
-  const globalRange = niceBounds(gr[0], gr[1]);
+    ? '统一纵轴 · ' + rangeText
+    : '每家公司各自纵轴 · ' + rangeText;
+  const globalRange = rangeAll();
   COMPANIES.forEach((c, i) => {
     const arr = seriesFor(state.caliber, state.ind, c);
     let lo, hi;
     if (state.scale === 'unified') { lo = globalRange[0]; hi = globalRange[1]; }
     else {
-      const r = robustRange(arr) || rangeAll();
-      [lo, hi] = niceBounds(r[0], r[1]);
+      [lo, hi] = valueRange(arr);
     }
     trendCharts.get(c).setOption(facetOption(c, arr, lo, hi, p, meta), true);
     const li = lastNonNull(arr);
@@ -851,11 +891,19 @@ function renderTrendTable(){
 }
 
 // ---------------------------------------------------------------- industry total
+const INDUSTRY_WEIGHT = {
+  '毛利率': '营业收入', '期间费用率': '营业收入', '核心利润率': '营业收入', '归母扣非ROE': '平均归母净资产',
+  '有息负债率': '总资产', '现金利息保障倍数': '利息费用', '现金债务覆盖率': '有息负债', '现金流量比率': '流动负债',
+  '重资产占比': '总资产', '总资产周转率': '平均总资产', '人均创收': '员工总数', '人均核心利润': '员工总数',
+  '营收现金比率': '营业收入', '自由现金流利润率': '营业收入', '资本开支覆盖倍数': '资本开支',
+  '经营现金流入占比': '现金流入合计', '累计资产现金回报率': '平均总资产', '高学历人才密度': '员工总数',
+};
 const industryCharts = new Map();
 let industryBuilt = false;
 function ensureIndustry(){
   if (industryBuilt) return;
   const grid = document.getElementById('industryGrid');
+  const els = [];
   INDS.forEach((ind, i) => {
     const cell = document.createElement('button');
     cell.type = 'button';
@@ -868,8 +916,11 @@ function ensureIndustry(){
       '<div class="industry-chart" id="ic' + i + '"></div>';
     cell.addEventListener('click', () => selectIndustry(ind.name));
     grid.appendChild(cell);
-    industryCharts.set(ind.name, echarts.init(document.getElementById('ic' + i), null, {renderer: 'canvas'}));
+    els.push([ind.name, document.getElementById('ic' + i)]);
   });
+  // 先完成网格布局，再初始化 ECharts；否则前面的图按网格尚未成型的宽度初始化，会横跨多张卡片。
+  els.forEach(([name, el]) => industryCharts.set(name, echarts.init(el, null, {renderer: 'canvas'})));
+  requestAnimationFrame(() => industryCharts.forEach(ch => ch.resize()));
   industryBuilt = true;
 }
 function industryOption(name, arr, p){
@@ -886,10 +937,11 @@ function industryOption(name, arr, p){
       formatter: ps => {
         const i = ps[0].dataIndex;
         const ns = (DATA.industryN && DATA.industryN[state.caliber] && DATA.industryN[state.caliber][name]) || [];
+        const w = INDUSTRY_WEIGHT[name];
         return '<div style="font-weight:600;margin-bottom:2px">' + esc(name) + '</div>' +
           '<div style="color:' + p.ink2 + '">' + PERIODS[i] + ' · <b style="color:' + p.ink + '">' +
           fmt(arr[i], meta.type) + '</b> ' + unitOf(meta.type) +
-          ' · 纳入 ' + (ns[i] || 0) + ' 家</div>';
+          ' · 纳入 ' + (ns[i] || 0) + ' 家 · ' + (w ? '按' + w + '加权' : '合并口径') + '</div>';
       }
     }),
     xAxis: {type: 'category', data: PERIODS, boundaryGap: false, show: false},
@@ -910,7 +962,7 @@ function updateIndustry(){
   ensureIndustry();
   const p = P(), cal = state.caliber;
   document.getElementById('industryNote').textContent =
-    state.caliber + ' · 比率=合并分子/合并分母 · 悬停看纳入家数';
+    state.caliber + ' · 比率=合并分子/合并分母（按分母加权） · 悬停看纳入家数';
   INDS.forEach((ind, i) => {
     const arr = (DATA.industry && DATA.industry[cal] && DATA.industry[cal][ind.name]) || [];
     const ch = industryCharts.get(ind.name);
@@ -980,8 +1032,8 @@ function cmpOption(p){
   const selected = COMPANIES.filter(c => state.cmpCompanies.includes(c));
   const all = [];
   selected.forEach(c => seriesFor(state.caliber, state.cmpInd, c).forEach(v => { if (!NUL(v)) all.push(v); }));
-  const rr = robustRange(all) || [-1, 1];
-  const bounds = niceBounds(rr[0], rr[1]);
+  const rr = valueRange(all);
+  const bounds = rr;
   const showEnd = selected.length <= 3;
   const series = selected.map(c => {
     const color = COMPANY_COLOR[c] || p.accent;
@@ -1026,7 +1078,7 @@ function cmpOption(p){
     yAxis: {
       type: 'value', min: bounds[0], max: bounds[1], splitNumber: 4,
       axisLine: {show: false}, axisTick: {show: false},
-      axisLabel: axisLabel(p, type),
+      axisLabel: Object.assign(axisLabel(p, type), {showMinLabel: false, showMaxLabel: false}),
       splitLine: {lineStyle: {color: p.grid, width: 1}}
     },
     series: series
@@ -1037,7 +1089,8 @@ function updateComparison(){
   syncCmpChips();
   const meta = IND[state.cmpInd], type = meta.type;
   document.getElementById('cmpNote').textContent =
-    state.cmpInd + ' · ' + state.cmpCompanies.length + ' 家 · 单位 ' + unitOf(type) + ' · ' + dirText(meta.dir);
+    state.cmpInd + ' · ' + state.cmpCompanies.length + ' 家 · 单位 ' + unitOf(type) + ' · ' + dirText(meta.dir) +
+    ' · 纵轴' + (state.range === 'clip' ? '5%–95%' : '全量程');
   cmpChart.setOption(cmpOption(P()), true);
   renderCmpTable();
 }
