@@ -1083,7 +1083,7 @@ def write_excel(df_all, ind_q, ind_cum, assets, kf, emp, checks, pdf_status):
     ws["A1"].font = openpyxl.styles.Font(bold=True, size=16, color="1F4E79")
     lines = [
         ("数据范围", f"{len(comps)} 家上市猪企（{'、'.join(comps)}）；期间 {pmin}–{pmax}。"
-                     "其中神农集团、东瑞股份 2021 年上市，自 2021H1 起；新希望截至 2026H1。"),
+                     "其中神农集团、东瑞股份 2021 年上市，自 2021H1 起；新希望已补充 2026Q3。"),
         ("数据来源", f"三大报表 xlsx（由年报/季报 PDF 解析汇总）+ {n_pdf} 份原始公告 PDF（扣非净利润、员工学历）。"),
         ("报表口径", "合并报表；资产负债表为期末时点；利润表、现金流量表原始为年初至今累计，本表另做单季差分。"),
         ("金额单位", "原始金额为人民币元；指标中人均创收/人均核心利润为万元/人。"),

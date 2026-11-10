@@ -112,7 +112,7 @@ pr = st.sidebar.select_slider("报告期", options=all_periods,
                               value=(default_start, all_periods[-1]))
 st.sidebar.markdown("---")
 st.sidebar.caption(
-    "数据源：21 家公司定期报告（三大报表 xlsx + 556 份公告 PDF）。\n\n"
+    "数据源：21 家公司定期报告（三大报表 xlsx + 557 份公告 PDF）。\n\n"
     "扣非净利润、员工学历由年报/季报原文解析；"
     "人均指标员工数取最近一期年报（Q1–Q3 用上年末；2021 年上市公司退回最早一期年报）。"
 )
