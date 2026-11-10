@@ -26,11 +26,11 @@ import warnings
 
 import openpyxl
 
-from update_feed_monthly import swap_chart_parts
+from update_feed_monthly import swap_chart_parts, target_path, WEDRIVE_DIR
 
 warnings.filterwarnings('ignore')
 
-DST_DIR = r'D:/CC/Desktop/'
+DST_DIR = WEDRIVE_DIR + os.sep
 STAMP = datetime.datetime.now().strftime('%Y%m%d')
 
 FILES = [
@@ -64,6 +64,22 @@ def quarter_label(q):
 
 def next_quarter(q):
     return (q[0] + 1, 1) if q[1] == 4 else (q[0], q[1] + 1)
+
+
+def prev_quarter(q):
+    return (q[0], q[1] - 1) if q[1] > 1 else (q[0] - 1, 4)
+
+
+def yoy_quarter(q):
+    return (q[0] - 1, q[1])
+
+
+def find_quarter_row(ws, q):
+    label = quarter_label(q)
+    for r in range(2, last_data_row(ws) + 1):
+        if str(ws.cell(r, 1).value or '').strip() == label:
+            return r
+    return None
 
 
 def latest_complete_quarter(monthly, cats):
@@ -240,9 +256,68 @@ def append_quarter(wb, q, monthly, quarterly):
     return summary, appended
 
 
+def sync_existing_quarters(wb, monthly, quarterly, cats, window=4, apply=True):
+    """月度数据被修订后，重算最近 window 个已存在季度的值与环比/同比。
+
+    协会报表常在后续月份上调前月数据（如 2026-11 源表把 2026-09 上调），
+    季度值必须跟着月度之和走，否则「季度数据」会与「月度数据」不一致。
+    只动最近 window 个季度，历史季度保持原样。返回 [(季度, [变化品类]), ...]。
+    """
+    recent = sorted(quarterly)[-window:]
+    qs, qm, qy = wb['季度数据'], wb['季度环比'], wb['季度同比']
+    h_qs, h_qm, h_qy = col_map(qs), col_map(qm), col_map(qy)
+    changed = []
+
+    for q in recent:
+        old = quarterly[q]
+        new = dict(old)
+        diffs = []
+        for c in cats:
+            calc = quarter_value(monthly, q, c)
+            o = old.get(c)
+            if calc is None:
+                continue
+            if o is None or abs(float(o) - calc) > 0.02:
+                diffs.append(c)
+                new[c] = calc
+        if not diffs:
+            continue
+        if apply:
+            r = find_quarter_row(qs, q)
+            if r is not None:
+                for c in diffs:
+                    qs.cell(r, h_qs[c]).value = new[c]
+        quarterly[q] = new
+        changed.append((q, diffs))
+
+    if not changed:
+        return []
+
+    # 受影响季度和它的下一季（下一季的环比以本季为基准）
+    affected = []
+    for q, _ in changed:
+        for x in (q, next_quarter(q)):
+            if x in quarterly and x not in affected:
+                affected.append(x)
+    for q in affected:
+        for ws, h, base_q in ((qm, h_qm, prev_quarter(q)),
+                              (qy, h_qy, yoy_quarter(q))):
+            if base_q not in quarterly:
+                continue
+            r = find_quarter_row(ws, q)
+            if r is None:
+                continue
+            for c in cats:
+                v = pct(quarterly[q].get(c), quarterly[base_q].get(c))
+                if apply:
+                    ws.cell(r, h[c]).value = v
+    return changed
+
+
 def process(fname, dry_run=False):
-    path = os.path.join(DST_DIR, fname)
-    lock = os.path.join(DST_DIR, '~$' + fname)
+    path = target_path(fname)
+    dst_dir = os.path.dirname(path)
+    lock = os.path.join(dst_dir, '~$' + fname)
     locked = os.path.exists(lock)
     out_path = path.replace('.xlsx', '_NEW.xlsx') if locked else path
     bak_path = path.replace('.xlsx', f'.bak_{STAMP}_quarterly.xlsx')
@@ -252,6 +327,11 @@ def process(fname, dry_run=False):
     wb = openpyxl.load_workbook(path)
     monthly = read_monthly(wb)
     quarterly = read_quarterly(wb)
+    cats = [k for k in col_map(wb['季度数据']).keys() if k != '季度']
+
+    # 月度被修订时，先把最近几个季度的值/环比/同比跟月度之和对齐
+    revised = sync_existing_quarters(wb, monthly, quarterly, cats,
+                                     apply=not dry_run)
 
     # 历史校验：季度值应等于 3 个月之和（抽查最近 4 个季度）
     recent = sorted(quarterly)[-4:]
@@ -265,7 +345,6 @@ def process(fname, dry_run=False):
 
     fixed = fix_month_a_styles(wb)
 
-    cats = [k for k in col_map(wb['季度数据']).keys() if k != '季度']
     target = latest_complete_quarter(monthly, cats)
     if target is None:
         wb.close()
@@ -284,18 +363,24 @@ def process(fname, dry_run=False):
         appended += n
         q = next_quarter(q)
 
+    rev_txt = ''
+    if revised:
+        rev_txt = '；修订 ' + '、'.join(
+            f'{quarter_label(x)}（{len(cs)}项）' for x, cs in revised)
+
     if dry_run:
         wb.close()
         if summary is None:
-            print(f'  [dry-run] A列修复 {fixed} 行；季度数据已是最新（{quarter_label(target)}）')
+            print(f'  [dry-run] A列修复 {fixed} 行{rev_txt}；'
+                  f'季度数据已是最新（{quarter_label(target)}）')
         else:
-            print(f'  [dry-run] A列修复 {fixed} 行；拟补 '
+            print(f'  [dry-run] A列修复 {fixed} 行{rev_txt}；拟补 '
                   f'{"、".join(quarter_label(x) for x in added)}: '
                   f'猪料={summary["q"]["猪料"]:,.2f}, 环比={summary["mom"]["猪料"]}%, '
                   f'同比={summary["yoy"]["猪料"]}%')
         return out_path, summary
 
-    if appended == 0 and fixed == 0:
+    if appended == 0 and fixed == 0 and not revised:
         wb.close()
         print(f'  [跳过] 季度数据已是最新（{quarter_label(target)}）')
         return out_path, summary
@@ -304,11 +389,11 @@ def process(fname, dry_run=False):
     wb.close()
     same = swap_chart_parts(out_path, bak_path)
     if summary is None:
-        print(f'  [完成] {os.path.basename(out_path)}  A列修复 {fixed} 行  '
+        print(f'  [完成] {os.path.basename(out_path)}  A列修复 {fixed} 行{rev_txt}  '
               f'（季度数据本已是最新）  图表原样={same}')
     else:
         print(f'  [完成] {os.path.basename(out_path)}  '
-              f'A列修复 {fixed} 行 / 补 {"、".join(quarter_label(x) for x in added)}  '
+              f'A列修复 {fixed} 行 / 补 {"、".join(quarter_label(x) for x in added)}{rev_txt}  '
               f'猪料={summary["q"]["猪料"]:,.2f}  '
               f'环比={summary["mom"]["猪料"]:+.2f}%  同比={summary["yoy"]["猪料"]:+.2f}%  '
               f'图表原样={same}')

@@ -12,7 +12,7 @@
   同比 = (本月 / 上年同月 - 1) × 100
 保留两位小数，与四份 Excel 的「月度环比 / 月度同比」逐格一致。
 
-本地优先读桌面的四份 Excel（永远最新）；云端没有桌面，读 data/feed_dashboard.json。
+本地优先读 WeDrive「云南饲料数据」目录的四份 Excel（永远最新）；云端读 data/feed_dashboard.json。
 """
 import datetime as dt
 import json
@@ -22,11 +22,25 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 JSON_PATH = os.path.join(HERE, 'data', 'feed_dashboard.json')
 
+# 2026-11 起四份表迁到企业微信 WeDrive；桌面保留为兜底
+WEDRIVE_DIR = (r'D:\CC\Documents\WXWork\1688856584623821\WeDrive\神农集团\期货部'
+               r'\数据库\生猪\曹晨现货数据\6.区域数据\区域产能数据\云南饲料数据')
+DESKTOP_DIR = r'D:\CC\Desktop'
+
+
+def _feed_path(name):
+    for d in (WEDRIVE_DIR, DESKTOP_DIR):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return os.path.join(WEDRIVE_DIR, name)
+
+
 EXCEL_PATHS = {
-    'all': r'D:\CC\Desktop\饲料_猪料各品类整理_图表版.xlsx',
-    'hp': r'D:\CC\Desktop\饲料_配合饲料_猪料整理_图表版.xlsx',
-    'ns': r'D:\CC\Desktop\饲料_浓缩饲料_猪料整理_图表版.xlsx',
-    'tjj': r'D:\CC\Desktop\饲料_添加剂预混合饲料_猪料整理_图表版.xlsx',
+    'all': _feed_path('饲料_猪料各品类整理_图表版.xlsx'),
+    'hp': _feed_path('饲料_配合饲料_猪料整理_图表版.xlsx'),
+    'ns': _feed_path('饲料_浓缩饲料_猪料整理_图表版.xlsx'),
+    'tjj': _feed_path('饲料_添加剂预混合饲料_猪料整理_图表版.xlsx'),
 }
 
 SCOPES = [
@@ -223,12 +237,13 @@ def find_source():
     if present:
         missing = [s['short'] for s in SCOPES if s not in present]
         raise FileNotFoundError(
-            f'桌面只找到 {len(present)}/4 份饲料 Excel，缺少：{"、".join(missing)}。'
-            f'请确认四份《饲料_*_图表版.xlsx》都在桌面。')
+            f'只找到 {len(present)}/4 份饲料 Excel（WeDrive 云南饲料数据 / 桌面），'
+            f'缺少：{"、".join(missing)}。'
+            f'请确认四份《饲料_*_图表版.xlsx》都在云南饲料数据目录。')
     if os.path.exists(JSON_PATH):
         return ('json', JSON_PATH, os.path.getmtime(JSON_PATH))
     raise FileNotFoundError(
-        '找不到饲料数据。本地请确认桌面四份《饲料_*_图表版.xlsx》；'
+        '找不到饲料数据。本地请确认云南饲料数据目录四份《饲料_*_图表版.xlsx》；'
         '云端请先运行 python build_feed_dashboard_data.py 生成 data/feed_dashboard.json。')
 
 

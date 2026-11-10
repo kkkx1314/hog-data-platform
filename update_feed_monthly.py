@@ -29,10 +29,42 @@ from openpyxl.utils import get_column_letter
 warnings.filterwarnings('ignore')
 
 _ARGS = [a for a in sys.argv[1:] if a != '--no-dashboard']
-SRC = (_ARGS[0] if _ARGS else
-       r'D:\CC\Desktop\2026年饲料工业生产情况表(本级汇总).xlsx')
-DST_DIR = r'D:/CC/Desktop/'
+
+# 2026-11 起四份整理表迁到企业微信 WeDrive 的「云南饲料数据」目录；桌面只作兜底
+WEDRIVE_DIR = (r'D:\CC\Documents\WXWork\1688856584623821\WeDrive\神农集团\期货部'
+               r'\数据库\生猪\曹晨现货数据\6.区域数据\区域产能数据\云南饲料数据')
+DESKTOP_DIR = r'D:\CC\Desktop'
+DST_DIR = WEDRIVE_DIR + os.sep
 STAMP = datetime.datetime.now().strftime('%Y%m%d')
+
+_WECHAT_FILE_ROOT = (r'D:\CC\Documents\WeChat Files'
+                     r'\wxid_qpujlfsz8o4a21\FileStorage\File')
+_SRC_NAME = '2026年饲料工业生产情况表(本级汇总).xlsx'
+
+
+def find_src():
+    """默认源文件：桌面 → 微信收到文件的最新月份目录。"""
+    p = os.path.join(DESKTOP_DIR, _SRC_NAME)
+    if os.path.exists(p):
+        return p
+    if os.path.isdir(_WECHAT_FILE_ROOT):
+        for d in sorted(os.listdir(_WECHAT_FILE_ROOT), reverse=True):
+            cand = os.path.join(_WECHAT_FILE_ROOT, d, _SRC_NAME)
+            if os.path.exists(cand):
+                return cand
+    return p
+
+
+def target_path(fname):
+    """优先 WeDrive，其次桌面；都不存在时按 WeDrive 路径处理。"""
+    for d in (WEDRIVE_DIR, DESKTOP_DIR):
+        p = os.path.join(d, fname)
+        if os.path.exists(p):
+            return p
+    return os.path.join(WEDRIVE_DIR, fname)
+
+
+SRC = _ARGS[0] if _ARGS else find_src()
 
 CATS9 = ['仔猪饲料', '哺乳仔猪饲料', '保育饲料', '母猪饲料', '后备母猪饲料',
          '其他母猪饲料', '生长肥育猪饲料', '其他猪饲料', '猪料']
@@ -245,8 +277,9 @@ def update_helper(ws_h, ws_src, cats):
 
 
 def process(fname, cats, colmap, src):
-    path = os.path.join(DST_DIR, fname)
-    lock = os.path.join(DST_DIR, '~$' + fname)
+    path = target_path(fname)
+    dst_dir = os.path.dirname(path)
+    lock = os.path.join(dst_dir, '~$' + fname)
     locked = os.path.exists(lock)
     out_path = path.replace('.xlsx', '_NEW.xlsx') if locked else path
     bak_path = path.replace('.xlsx', f'.bak_{STAMP}.xlsx')
