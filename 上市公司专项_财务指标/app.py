@@ -17,11 +17,14 @@ XLSX = ROOT / "output" / "上市公司财务指标_底表.xlsx"
 st.set_page_config(page_title="上市猪企财务质量面板", page_icon="🐖", layout="wide")
 
 COMPANY_COLOR = {
-    "牧原": "#2E5EAA",
-    "温氏": "#D9822B",
-    "新希望": "#2A9D8F",
-    "天邦": "#C0392B",
+    "牧原": "#2E5EAA", "温氏": "#D9822B", "新希望": "#2A9D8F", "正邦": "#8E44AD",
+    "天邦": "#C0392B", "新五丰": "#16A085", "唐人神": "#E67E22", "巨星": "#2980B9",
+    "天康": "#27AE60", "大北农": "#F39C12", "神农": "#D35400", "华统": "#7F8C8D",
+    "立华": "#3498DB", "傲农": "#9B59B6", "京基智农": "#1ABC9C", "东瑞": "#E74C3C",
+    "金新农": "#34495E", "罗牛山": "#B7950B", "克明": "#A04000", "益生": "#5DADE2",
+    "正虹": "#AF7AC5",
 }
+FOCUS_DEFAULT = ["牧原", "温氏", "新希望", "正邦", "天邦", "新五丰"]
 
 INDICATORS = [
     # key, 中文, 分类, 单位类型, 方向(+1越高越好/-1越低越好), 说明
@@ -86,13 +89,14 @@ def fmt_num(v, typ):
 
 q_all, c_all, assets_all, kf_all, emp_all = load_data()
 all_periods = sorted(q_all["期间"].unique(), key=period_key)
-all_companies = [c for c in ["牧原", "温氏", "新希望", "天邦"] if c in q_all["公司"].unique()]
+all_companies = list(dict.fromkeys(q_all["公司"].tolist()))
+focus_default = [c for c in FOCUS_DEFAULT if c in all_companies]
 
 # ---------------------------------------------------------------- 侧栏
 st.sidebar.title("🐖 上市猪企财务质量")
-st.sidebar.caption("2020Q1–2026Q3 · 4 家上市猪企")
+st.sidebar.caption(f"{all_periods[0]}–{all_periods[-1]} · {len(all_companies)} 家上市猪企")
 
-companies = st.sidebar.multiselect("公司", all_companies, default=all_companies)
+companies = st.sidebar.multiselect("公司", all_companies, default=focus_default)
 caliber = st.sidebar.radio("口径", ["单季", "累计"], index=0,
                            help="单季=单季度差分值；累计=年初至今累计值（比率类已年化）")
 default_start = "2023Q1" if "2023Q1" in all_periods else all_periods[0]
@@ -100,9 +104,9 @@ pr = st.sidebar.select_slider("报告期", options=all_periods,
                               value=(default_start, all_periods[-1]))
 st.sidebar.markdown("---")
 st.sidebar.caption(
-    "数据源：公司定期报告（三大报表 xlsx + 107 份公告 PDF）。\n\n"
+    "数据源：21 家公司定期报告（三大报表 xlsx + 556 份公告 PDF）。\n\n"
     "扣非净利润、员工学历由年报/季报原文解析；"
-    "人均指标员工数取最近一期年报（Q1–Q3 用上年末）。"
+    "人均指标员工数取最近一期年报（Q1–Q3 用上年末；2021 年上市公司退回最早一期年报）。"
 )
 
 if not companies:
@@ -135,19 +139,42 @@ with tab1:
     sel_period = st.selectbox("报告期", periods[::-1], index=0, key="overview_period")
     snap = df[df["期间"] == sel_period].set_index("公司").reindex(companies)
 
-    c1, c2, c3, c4 = st.columns(4)
-    for col, comp in zip([c1, c2, c3, c4], companies):
-        with col:
-            if comp in snap.index and pd.notna(snap.loc[comp, "核心利润率"]):
-                st.metric(comp, fmt(snap.loc[comp, "核心利润率"], "pct"),
-                          help="核心利润率 = 核心利润 / 营业收入（最全面的盈利口径）")
-                st.caption(f"毛利率 {fmt(snap.loc[comp, '毛利率'], 'pct')} ｜ "
-                           f"归母扣非ROE {fmt(snap.loc[comp, '归母扣非ROE'], 'pct')}")
-            else:
-                st.metric(comp, "—")
+    focus = st.multiselect(
+        "重点公司（卡片，最多 8 家）", companies,
+        default=companies[:6], max_selections=8, key="overview_focus")
+    if focus:
+        cols = st.columns(min(4, len(focus)))
+        for i, comp in enumerate(focus):
+            with cols[i % len(cols)]:
+                if comp in snap.index and pd.notna(snap.loc[comp, "核心利润率"]):
+                    st.metric(comp, fmt(snap.loc[comp, "核心利润率"], "pct"),
+                              help="核心利润率 = 核心利润 / 营业收入（最全面的盈利口径）")
+                    st.caption(f"毛利率 {fmt(snap.loc[comp, '毛利率'], 'pct')} ｜ "
+                               f"归母扣非ROE {fmt(snap.loc[comp, '归母扣非ROE'], 'pct')}")
+                else:
+                    st.metric(comp, "—")
 
     st.caption("口径提示：毛利率只扣营业成本；核心利润率扣营业总成本（含税金及附加和四项期间费用）。"
                "(营业总收入−营业总成本)/营业总收入 对应的是核心利润率，不是毛利率。")
+
+    st.subheader(f"{sel_period} · 全部公司横向排名")
+    rank_ind = ["核心利润率", "毛利率", "归母扣非ROE", "有息负债率",
+                "营收现金比率", "自由现金流利润率", "总资产周转率", "高学历人才密度"]
+    rank = q_all[q_all["期间"] == sel_period].set_index("公司").reindex(all_companies)
+    rank = rank[[c for c in rank_ind if c in rank.columns]].copy()
+    pct_cols_rank = [c for c in rank.columns if IND_META.get(c, {}).get("type") == "pct"]
+    for c in pct_cols_rank:
+        rank[c] = rank[c] * 100
+    rank = rank.dropna(how="all")
+    if not rank.empty:
+        rank = rank.sort_values("核心利润率", ascending=False)
+        st.dataframe(
+            rank, width="stretch",
+            column_config={c: st.column_config.NumberColumn(c, format="%.2f%%") for c in pct_cols_rank}
+            | {c: st.column_config.NumberColumn(c, format="%.2f") for c in rank.columns if c not in pct_cols_rank})
+        st.caption("按核心利润率降序；单位：比率类为 %，总资产周转率为倍。")
+    else:
+        st.info("该报告期无数据。")
 
     st.subheader("指标全景（原始值）")
     units = {"pct": "%", "mult": "倍", "percap": "万元/人"}
@@ -313,9 +340,9 @@ with tab5:
 - **毛利率只扣营业成本**；**核心利润率**=(营业收入−营业成本−税金及附加−销售费用−管理费用−研发费用−财务费用)/营业收入，即 (营业总收入−营业总成本)/营业总收入。两者差额=税金及附加+四项期间费用占营业收入比重，不可混用。
 - **单位**：比率类为 %，保障/覆盖类为倍，人均创收与人均核心利润为万元/人。
 - **有息负债**=短期借款+一年内到期的非流动负债+长期借款+应付债券+租赁负债。
-- **员工数**：Q1–Q3 用上年末年报、Q4 用本年末年报；2020Q1–Q3 因缺 2019 年报暂用 2020 年末。
-- **扣非净利润**：取自各期报告“主要会计数据”表“归属于上市公司股东的扣除非经常性损益的净利润”，与报表累计营收逐期对齐校验（107/107 通过）。
+- **员工数**：Q1–Q3 用上年末年报、Q4 用本年末年报；2020Q1–Q3 及 2021 年新上市公司缺上市前年报时，暂用最早一期年报。
+- **扣非净利润**：取自各期报告“主要会计数据”表“归属于上市公司股东的扣除非经常性损益的净利润”，与报表累计营收逐期对齐校验。
 - **复合增长率**：滚动 3 年；营收用 TTM（最近 4 个单季合计）剔除季节性；不足 3 年留空。
-- **累计资产现金回报率**：2020Q1 至报告期末累计经营现金流净额 ÷ 区间各季末总资产算术平均。
-- **高学历人才密度**：本科及以上（含博士、硕士/研究生、本科）÷ 员工总数；年报“教育程度”表口径。
+- **累计资产现金回报率**：首个报告期至本期末累计经营现金流净额 ÷ 区间各季末总资产算术平均（2020 年上市的公司从 2020Q1 起算，神农/东瑞从 2021H1 起算）。
+- **高学历人才密度**：本科及以上（含博士、硕士/研究生、本科，含“大学”）÷ 员工总数；年报“教育程度”表口径。若“本科及大专”合并披露无法拆分，只计研究生及以上，为下限（立华部分年度、巨星）。
 """)
