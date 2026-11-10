@@ -2,6 +2,7 @@
 """上市猪企财务质量交互面板（Streamlit）。"""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -303,8 +304,9 @@ with tab3:
 
         st.markdown("---")
         st.subheader("单项资产 · 历年")
-        st.caption("全历史 2020Q1–2026Q3，不受左侧报告期区间影响；单位：亿元。"
-                   "合计逐期剔除未披露公司，并在下方标注；报表未列示该项也按未披露处理。")
+        st.caption("可拖动报告期区间选择分析窗口（独立于左侧筛选）；单位：亿元。"
+                   "合计按所选区间剔除未披露公司并在下方标注；报表未列示该项也按未披露处理。"
+                   "右轴为相邻报告期环比（约一个季度）。")
         item_order = ["固定资产", "存货", "在建工程", "生产性生物资产", "投资性房地产"]
         ic1, ic2, ic3 = st.columns([1.0, 1.0, 1.4])
         with ic1:
@@ -315,104 +317,153 @@ with tab3:
             basis = "整段剔除"
             if scope == "全部公司合计":
                 basis = st.radio("合计口径", ["整段剔除", "逐期剔除"], horizontal=True, key="asset_basis")
+        period_range = st.select_slider(
+            "报告期区间（拖动两端）", options=all_periods,
+            value=(all_periods[0], all_periods[-1]), key="asset_period_range")
+        if isinstance(period_range, tuple):
+            win_start, win_end = period_range[0], period_range[-1]
+        else:
+            win_start = win_end = period_range
+        window = all_periods[all_periods.index(win_start):all_periods.index(win_end) + 1]
 
         piv = assets_all.pivot(index="期间", columns="公司", values=item_pick).reindex(all_periods)
         for c in all_companies:
             if c not in piv.columns:
                 piv[c] = np.nan
         piv = piv[all_companies]
+        pivw = piv.loc[window]
 
         if scope != "全部公司合计":
-            vals = piv[scope] / 1e8
+            vals = pivw[scope] / 1e8
             ns = vals.notna().astype(int)
             sample_note = f"{scope} 单家公司"
             custom = None
             hover = "%{x}<br>%{y:,.2f} 亿元<extra></extra>"
         elif basis == "整段剔除":
-            eligible = [c for c in all_companies if piv[c].notna().all()]
+            eligible = [c for c in all_companies if pivw[c].notna().all()]
             excluded = [c for c in all_companies if c not in eligible]
-            vals = (piv[eligible].sum(axis=1, min_count=1) if eligible
-                    else pd.Series(np.nan, index=all_periods)) / 1e8
-            ns = pd.Series(len(eligible), index=all_periods)
-            sample_note = (f"整段剔除：纳入 {len(eligible)} 家，剔除 {len(excluded)} 家"
-                           "（该项任一期未披露或报表未列示即整家剔除）")
-            custom = [int(len(eligible)) for _ in all_periods]
+            vals = (pivw[eligible].sum(axis=1, min_count=1) if eligible
+                    else pd.Series(np.nan, index=window)) / 1e8
+            ns = pd.Series(len(eligible), index=window)
+            sample_note = (f"所选区间整段剔除：纳入 {len(eligible)} 家，剔除 {len(excluded)} 家"
+                           "（区间内任一期未披露或报表未列示即整家剔除）")
+            custom = [int(len(eligible)) for _ in window]
             hover = "%{x}<br>%{y:,.2f} 亿元<br>纳入 %{customdata} 家<extra></extra>"
         else:
-            vals = piv.sum(axis=1, min_count=1) / 1e8
-            ns = piv.notna().sum(axis=1)
-            sample_note = "逐期剔除：每期只加总当期已披露公司，样本家数随期变化"
-            custom = [(int(ns[p]), "、".join([c for c in all_companies if pd.isna(piv.at[p, c])]))
-                      for p in all_periods]
+            vals = pivw.sum(axis=1, min_count=1) / 1e8
+            ns = pivw.notna().sum(axis=1)
+            sample_note = "所选区间逐期剔除：每期只加总当期已披露公司，样本家数随期变化"
+            custom = [(int(ns[p]), "、".join([c for c in all_companies if pd.isna(pivw.at[p, c])]))
+                      for p in window]
             hover = ("%{x}<br>%{y:,.2f} 亿元<br>纳入 %{customdata[0]} 家"
                      "<br>剔除：%{customdata[1]}<extra></extra>")
 
-        figI = go.Figure(go.Bar(
-            x=all_periods, y=vals.values, marker_color=colors[item_pick],
-            customdata=custom, hovertemplate=hover))
-        tickvals = [p for p in all_periods if p.endswith("Q1")]
-        figI.update_layout(height=360, template="plotly_white", yaxis_title="亿元",
-                           margin=dict(l=10, r=10, t=20, b=10), showlegend=False)
+        q = vals.pct_change().replace([np.inf, -np.inf], np.nan)
+        qvals = q.dropna()
+        has_q = len(qvals) > 0
+        q_tickformat = ".1%"
+        q_ticks = None
+        q_range = None
+        if has_q:
+            max_abs = float(qvals.abs().max()) or 0.01
+            rough = max_abs / 3
+            exp = math.floor(math.log10(rough))
+            f = rough / (10 ** exp)
+            nf = 1 if f <= 1 else 2 if f <= 2 else 2.5 if f <= 2.5 else 5 if f <= 5 else 10
+            step = nf * (10 ** exp)
+            top = math.ceil(max_abs / step) * step
+            q_ticks = [round(-top + i * step, 10) for i in range(int(2 * top / step) + 1)]
+            q_range = [-top, top]
+            q_tickformat = ".1%" if max_abs < 0.1 else ".0%"
+
+        figI = make_subplots(specs=[[{"secondary_y": True}]])
+        figI.add_trace(go.Bar(
+            x=window, y=vals.values, marker_color=colors[item_pick],
+            customdata=custom, hovertemplate=hover, name=item_pick), secondary_y=False)
+        if has_q:
+            figI.add_trace(go.Scatter(
+                x=window, y=q.values, mode="lines", name="环比（右轴）",
+                line=dict(color="#52514E", width=2, dash="dash"),
+                hovertemplate="%{x}<br>环比 %{y:.2%}<extra></extra>"), secondary_y=True)
+        tickvals = [p for p in window if p.endswith("Q1")]
+        figI.update_layout(
+            height=380, template="plotly_white",
+            margin=dict(l=10, r=55, t=36, b=10),
+            legend=dict(orientation="h", y=1.12, x=0, font=dict(size=11)),
+            hovermode="x unified")
         figI.update_xaxes(tickmode="array", tickvals=tickvals,
                           ticktext=[p[:4] for p in tickvals])
+        figI.update_yaxes(title_text="亿元", secondary_y=False)
+        if has_q:
+            figI.update_yaxes(title_text="环比", tickformat=q_tickformat,
+                              range=q_range, tickvals=q_ticks, showgrid=False,
+                              zeroline=True, zerolinecolor="#D9D8D2", secondary_y=True)
+        else:
+            figI.update_yaxes(visible=False, secondary_y=True)
         st.plotly_chart(figI, width="stretch")
         last_idx = vals.last_valid_index()
         if last_idx is None:
             st.info("所选范围暂无该项资产数据。")
         else:
             extra = f" · 纳入 {int(ns[last_idx])} 家" if scope == "全部公司合计" else ""
+            if pd.notna(q.loc[last_idx]):
+                extra += f" · 环比 {q.loc[last_idx] * 100:+.2f}%"
             st.caption(f"{sample_note} ｜ 最新：{last_idx} · {vals[last_idx]:,.2f} 亿元{extra}")
 
         if scope == "全部公司合计" and basis == "整段剔除":
             rows = []
             for c in excluded:
-                miss = [p for p in all_periods if pd.isna(piv.at[p, c])]
-                if len(miss) == len(all_periods):
+                miss = [p for p in window if pd.isna(pivw.at[p, c])]
+                if len(miss) == len(window):
                     txt = "全部报告期"
                 elif len(miss) > 12:
-                    have = [p for p in all_periods if p not in miss]
+                    have = [p for p in window if p not in miss]
                     txt = f"共 {len(miss)} 期缺失（有值：{'、'.join(have)}）"
                 else:
                     txt = "、".join(miss)
                 rows.append({"公司": c, "未披露期数": len(miss), "未披露报告期": txt})
             if rows:
-                st.markdown("**剔除公司（整段剔除）**")
+                st.markdown("**剔除公司（所选区间整段剔除）**")
                 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             else:
-                st.caption("全部公司均满足平衡样本条件。")
+                st.caption("所选区间内全部公司均满足平衡样本条件。")
         elif scope == "全部公司合计":
             rows = []
-            for p in all_periods:
-                miss = [c for c in all_companies if pd.isna(piv.at[p, c])]
+            for p in window:
+                miss = [c for c in all_companies if pd.isna(pivw.at[p, c])]
                 if miss:
                     rows.append({
                         "报告期": p,
                         "合计(亿元)": round(float(vals[p]), 2) if pd.notna(vals[p]) else None,
+                        "环比(%)": round(float(q[p]) * 100, 2) if pd.notna(q[p]) else None,
                         "纳入家数": int(ns[p]),
                         "剔除公司": "、".join(miss),
                     })
             if rows:
-                st.markdown("**逐期剔除明细**")
+                st.markdown("**逐期剔除明细（所选区间）**")
                 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             else:
-                st.caption("各期均为全部公司披露，无剔除。")
+                st.caption("所选区间各期均为全部公司披露，无剔除。")
         else:
-            miss = [p for p in all_periods if pd.isna(vals[p])]
+            miss = [p for p in window if pd.isna(vals[p])]
             if miss:
-                st.caption(f"{scope} 未披露报告期：{'、'.join(miss)}")
+                st.caption(f"{scope} 在所选区间未披露报告期：{'、'.join(miss)}")
             else:
-                st.caption(f"{scope} 各期均有披露。")
+                st.caption(f"{scope} 在所选区间各期均有披露。")
 
         with st.expander("查看逐期数据表"):
+            q_pct = [None if pd.isna(v) else round(float(v) * 100, 2) for v in q]
             if scope == "全部公司合计":
-                tbl = pd.DataFrame({"报告期": all_periods, "金额(亿元)": vals.round(2).values,
+                tbl = pd.DataFrame({"报告期": window, "金额(亿元)": vals.round(2).values,
+                                    "环比(%)": q_pct,
                                     "纳入家数": ns.values,
-                                    "剔除公司": (["固定剔除 " + str(len(excluded)) + " 家"] * len(all_periods)
+                                    "剔除公司": (["固定剔除 " + str(len(excluded)) + " 家"] * len(window)
                                                if basis == "整段剔除"
-                                               else ["、".join([c for c in all_companies if pd.isna(piv.at[p, c])]) or "—"
-                                                     for p in all_periods])})
+                                               else ["、".join([c for c in all_companies if pd.isna(pivw.at[p, c])]) or "—"
+                                                     for p in window])})
             else:
-                tbl = pd.DataFrame({"报告期": all_periods, "金额(亿元)": vals.round(2).values,
+                tbl = pd.DataFrame({"报告期": window, "金额(亿元)": vals.round(2).values,
+                                    "环比(%)": q_pct,
                                     "状态": ["已披露" if pd.notna(v) else "未披露" for v in vals]})
             st.dataframe(tbl, width="stretch", hide_index=True)
 
