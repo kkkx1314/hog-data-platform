@@ -407,14 +407,15 @@ if __name__ == '__main__':
 
     if '--no-dashboard' not in sys.argv:
         script = os.path.join(here, 'build_feed_dashboard_data.py')
-        print('\n== 生成线上看板快照 ==')
+        print('\n== 生成看板快照（离线页数据源） ==')
         r = subprocess.run([sys.executable, script], cwd=here)
         if r.returncode:
             print('[WARN] 看板快照生成失败（Excel 已更新）；'
                   '可稍后单独运行 build_feed_dashboard_data.py')
         else:
-            site = os.path.join(here, 'build_feed_public_site.py')
-            print('\n== 生成公开页 docs/feed/index.html ==')
+            # 公开站点已下线，改为刷新桌面的离线单文件看板
+            site = os.path.join(here, 'build_feed_offline.py')
+            print('\n== 更新离线看板 HTML ==')
             r2 = subprocess.run([sys.executable, site], cwd=here)
             if r2.returncode:
-                print('[WARN] 公开页生成失败；可稍后单独运行 build_feed_public_site.py')
+                print('[WARN] 离线看板生成失败；可稍后单独运行 build_feed_offline.py')

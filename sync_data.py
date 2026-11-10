@@ -1,13 +1,14 @@
 """
-一键同步：平台数据 + 调运数据 -> data/（仅保留本机），并刷新两个公开看板。
+一键同步：平台数据 + 调运数据 -> data/（仅保留本机）。
+公开站点已于 2026-11-10 全部下线（gh-pages 已清空），本脚本不再发布任何页面。
 双击 同步数据到GitHub.bat 即可运行
 
 数据文件不再进公开 Git（data/ 已 gitignore），改为推到私有仓库 swine-dashboard，
-Streamlit Cloud 启动时凭 GITHUB_TOKEN 从那里取数；公开站点仍通过 gh-pages 发布。
+Streamlit Cloud 启动时凭 GITHUB_TOKEN 从那里取数；公开站点已于 2026-11-10 下线。
 调运数据策略：找到最新的二次去重文件，将其中新日期追加到全量合并文件，
 生成一个日期范围更大的统一全量文件。
 """
-import shutil, re, subprocess, tempfile
+import shutil, re, subprocess
 from pathlib import Path
 import pandas as pd
 
@@ -46,44 +47,8 @@ def extract_date_tag(name: str) -> str:
     return ""
 
 
-def publish_pages() -> str:
-    """把公开页面强制推成 gh-pages 分支。
-
-    - docs/index.html      -> 社会供应压力看板（根路径）
-    - docs/feed/index.html -> 饲料产量看板（/feed/，独立页面）
-
-    GitHub Pages 的站点源就是这条分支，每次只有少量文件 + 一次提交，
-    所以用 -f 覆盖，仓库不会越滚越大。失败不影响主流程（只提示）。
-    """
-    pub_html = DATA.parent / "docs" / "index.html"
-    feed_html = DATA.parent / "docs" / "feed" / "index.html"
-    if not pub_html.exists():
-        return "跳过（没有 docs/index.html，先跑一次「更新看板.bat」）"
-    cfg = lambda k, d: (subprocess.run(["git", "config", k], cwd=str(BASE),
-                                       capture_output=True, text=True).stdout.strip() or d)
-    name, email = cfg("user.name", "sync"), cfg("user.email", "sync@local")
-    remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=str(BASE),
-                            capture_output=True, text=True).stdout.strip()
-    with tempfile.TemporaryDirectory() as td:
-        shutil.copy2(pub_html, Path(td) / "index.html")
-        # 禁止搜索引擎收录：各页 <meta name="robots"> 是主手段，robots.txt 作补充
-        (Path(td) / "robots.txt").write_text(
-            "User-agent: *\nDisallow: /\n", encoding="utf-8")
-        files = ["index.html", "robots.txt"]
-        if feed_html.exists():
-            (Path(td) / "feed").mkdir()
-            shutil.copy2(feed_html, Path(td) / "feed" / "index.html")
-            files.append("feed/index.html")
-        for args in (["init", "-q"],
-                     ["add", *files],
-                     ["-c", f"user.name={name}", "-c", f"user.email={email}",
-                      "commit", "-q", "-m", "pages: 社会供应压力看板 + 饲料产量看板"],
-                     ["push", "-f", remote, "HEAD:gh-pages"]):
-            r = subprocess.run(["git", *args], cwd=td, capture_output=True, text=True)
-            if r.returncode:
-                raise RuntimeError(f"git {' '.join(args[:2])} 失败: {(r.stderr or r.stdout).strip()[:300]}")
-    tail = "（饲料看板 /feed/）" if "feed/index.html" in files else ""
-    return f"已刷新 https://kkkx1314.github.io/hog-data-platform/{tail}"
+# 公开站点（GitHub Pages）已于 2026-11-10 整体下线：gh-pages 分支已清空。
+# 这里不再保留任何发布逻辑，避免下次运行把页面重新推上去。
 
 
 def add_synced(cat: str, tag: str, fname: str):
@@ -99,8 +64,6 @@ try:
     import build_feed_dashboard_data as bfd
     try:
         bfd.main()
-        import build_feed_public_site as bfs
-        bfs.main()
     except SystemExit as e:
         print(f"  [WARN] 看板快照校验未通过 (exit {e.code})，沿用旧快照")
 except Exception as e:
@@ -268,18 +231,11 @@ except Exception as e:
 
 # [5/6] 公开仓库 master 不含任何数据
 print()
-print("[5/6] 跳过公开仓库（数据不进 master；公开页在 [6/6] 单独发 gh-pages）")
+print("[5/6] 跳过公开仓库（数据不进 master；公开站点已停用）")
 
-# [6/6] 刷新公开站点
+# [6/6] 公开站点已停用
 print()
-print("[6/6] 刷新公开站点（GitHub Pages）...")
-try:
-    print(f"  {publish_pages()}")
-    pages_ok = True
-except Exception as e:
-    print(f"  [WARN] 刷新失败: {e}")
-    print("  主数据已推上去，这一步可以稍后重跑；或到仓库 Settings -> Pages 检查源是否为 gh-pages 分支")
-    pages_ok = False
+print("[6/6] 公开站点：已停用（2026-11-10 起 gh-pages 已清空，不再自动发布）")
 
 # ==================== 同步摘要 ====================
 print()
@@ -318,8 +274,6 @@ print()
 print(f"  [Git] 公开仓库不含数据；私有仓库{'已更新' if private_ok else '未更新（见上方 WARN）'}")
 
 print()
-print("  [公开站点] " + ("https://kkkx1314.github.io/hog-data-platform/"
-                         "（饲料看板：/feed/）"
-                         if pages_ok else "本次未刷新（见上面的 WARN）"))
+print("  [公开站点] 已停用（看板改为本地离线 HTML）")
 
 print("=" * 55)

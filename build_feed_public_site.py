@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""生成公开静态页 docs/feed/index.html（不依赖 Streamlit / Plotly）。
+"""【已停用】生成公开静态页 docs/feed/index.html（不依赖 Streamlit / Plotly）。
+
+2026-11-10 起公开站点整体下线（gh-pages 已清空），本脚本不再被任何流程调用；
+离线单文件版见 build_feed_offline.py。保留仅作历史参考。
 
 数据来自 data/feed_dashboard.json。页面是一个自包含的单文件：
 筛选（口径 × 月度/季度 × 产量/环比/同比 × 品类 × 年份）、KPI、
@@ -7,7 +10,7 @@
 没有外部 CDN 依赖，断网/弱网环境也能打开。
 
 用法：python build_feed_public_site.py
-发布：同步数据到GitHub.bat 会把 docs/feed/index.html 一起推到 gh-pages。
+发布：已停用，不再推 gh-pages；离线版见 build_feed_offline.py。
 """
 import json
 import os
